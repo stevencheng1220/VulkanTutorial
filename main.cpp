@@ -1,4 +1,9 @@
+/**
+ * Vulkan header from the LunarG SDK, provides the functions, structures, and
+ * enumerations.
+ */
 #define GLFW_INCLUDE_VULKAN
+
 #include <GLFW/glfw3.h>
 
 #include <iostream>
@@ -15,7 +20,7 @@ public:
     }
 
 private:
-    GLFWwindow* window;
+    GLFWwindow *window;
 
     VkInstance instance;
 
@@ -60,7 +65,7 @@ private:
         createInfo.pApplicationInfo = &appInfo;
 
         uint32_t glfwExtensionCount = 0;
-        const char** glfwExtensions;
+        const char **glfwExtensions;
         glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
         createInfo.enabledExtensionCount = glfwExtensionCount;
@@ -79,7 +84,7 @@ int main() {
 
     try {
         app.run();
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << e.what() << std::endl;
         return EXIT_FAILURE;
     }
