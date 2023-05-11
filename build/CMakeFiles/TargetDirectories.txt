@@ -1,0 +1,3 @@
+/Users/stevencheng/CLionProjects/VulkanTutorial/build/CMakeFiles/VulkanTutorial.dir
+/Users/stevencheng/CLionProjects/VulkanTutorial/build/CMakeFiles/edit_cache.dir
+/Users/stevencheng/CLionProjects/VulkanTutorial/build/CMakeFiles/rebuild_cache.dir
