@@ -301,13 +301,14 @@ private:
      }
 
      /**
-      *
+      * Creates a logical device in Vulkan with a single queue for the graphics family specified by the
+      * QueueFamilyIndices structure. The code sets up the necessary parameters, including queue priority, device features, and validation layers if enabled. If the logical device creation is successful, it retrieves the handle for the graphics queue.
       */
      void createLogicalDevice() {
          QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
          /*
-          * This structure decribes number of queues we want for a single queue family
+          * This structure describes number of queues we want for a single queue family
           */
          VkDeviceQueueCreateInfo queueCreateInfo{};
          queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
