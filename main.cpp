@@ -372,7 +372,7 @@ private:
         }
 
         /*
-        * Retrieve graphics family and present family handles
+        * Retrieve graphics family and presentation family handles
         */
         vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
         vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
