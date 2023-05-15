@@ -12,6 +12,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <optional>
+#include <set>
 
 /*
  * Variables for window dimensions
@@ -77,9 +78,10 @@ VkAllocationCallbacks* pAllocator) {
  */
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
+    std::optional<uint32_t> presentFamily;
 
     bool isComplete() {
-        return graphicsFamily.has_value();
+        return graphicsFamily.has_value() && presentFamily.has_value();
     }
 };
 
@@ -103,11 +105,13 @@ private:
     GLFWwindow *window;
     VkInstance instance;
     VkDebugUtilsMessengerEXT debugMessenger;
+    VkSurfaceKHR surface; // For showing results to the screen
 
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device; // logical device
 
     VkQueue graphicsQueue;
+    VkQueue presentQueue;
 
     /**
      * The given code initializes a window using the GLFW library and creates a non-resizable window for Vulkan
@@ -129,6 +133,7 @@ private:
     void initVulkan() {
         createInstance();
         setupDebugMessenger();
+        createSurface();
         pickPhysicalDevice();
         createLogicalDevice();
     }
@@ -148,10 +153,13 @@ private:
      * objects, and terminates the GLFW library.
      */
     void cleanup() {
+        vkDestroyDevice(device, nullptr);
+
         if (enableValidationLayers) {
             DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
         }
 
+        vkDestroySurfaceKHR(instance, surface, nullptr);
         vkDestroyInstance(instance, nullptr);
 
         glfwDestroyWindow(window);
@@ -270,108 +278,126 @@ private:
     }
 
     /**
+     * Creates a window surface using GLFW library in Vulkan, associated with the provided window and Vulkan instance
+     * . If the creation of the surface fails, an exception is thrown with an error message indicating the failure.
+     */
+    void createSurface() {
+        if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create window surface!");
+        }
+    }
+
+    /**
      * selects a suitable physical device (GPU) for Vulkan rendering by querying the available devices and checking
      * if they meet certain criteria. If a suitable device is found, it is assigned to the variable physicalDevice;
      * otherwise, an exception is thrown indicating the failure to find a suitable GPU.
      */
-     void pickPhysicalDevice() {
-         uint32_t deviceCount = 0;
-         vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+    void pickPhysicalDevice() {
+        uint32_t deviceCount = 0;
+        vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
 
-         if (deviceCount == 0) {
-             throw std::runtime_error("failed to find GPUs with Vulkan support!");
-         }
+        if (deviceCount == 0) {
+            throw std::runtime_error("failed to find GPUs with Vulkan support!");
+        }
 
-         std::vector<VkPhysicalDevice> devices(deviceCount);
-         vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+        std::vector<VkPhysicalDevice> devices(deviceCount);
+        vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
-         /*
-          * Query all devices retrieved and see if the device is suitable
-          */
-         for (const auto& device : devices) {
-             if (isDeviceSuitable(device)) {
-                 physicalDevice = device;
-                 break;
-             }
-         }
+        /*
+        * Query all devices retrieved and see if the device is suitable
+        */
+        for (const auto& device : devices) {
+            if (isDeviceSuitable(device)) {
+                physicalDevice = device;
+                break;
+            }
+        }
 
-         if (physicalDevice == VK_NULL_HANDLE) {
-             throw std::runtime_error("failed to find a suitable GPU!");
-         }
-     }
+        if (physicalDevice == VK_NULL_HANDLE) {
+            throw std::runtime_error("failed to find a suitable GPU!");
+        }
+    }
 
-     /**
-      * Creates a logical device in Vulkan with a single queue for the graphics family specified by the
-      * QueueFamilyIndices structure. The code sets up the necessary parameters, including queue priority, device features, and validation layers if enabled. If the logical device creation is successful, it retrieves the handle for the graphics queue.
-      */
-     void createLogicalDevice() {
-         QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+    /**
+     * Creates a logical device in Vulkan with a single queue for the graphics family specified by the
+     * QueueFamilyIndices structure. The code sets up the necessary parameters, including queue priority, device features, and validation layers if enabled. If the logical device creation is successful, it retrieves the handle for the graphics queue.
+     */
+    void createLogicalDevice() {
+        QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
-         /*
-          * This structure describes number of queues we want for a single queue family
-          */
-         VkDeviceQueueCreateInfo queueCreateInfo{};
-         queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-         queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
-         queueCreateInfo.queueCount = 1;
+        /*
+        * Create a vector of queues that stores VkDeviceQueueCreateInfos. This structure describes number of queues we
+         * want for a single queue family
+        */
+        std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+        std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value()};
 
-         float queuePriority = 1.0f;
-         queueCreateInfo.pQueuePriorities = &queuePriority;
+        float queuePriority = 1.0f;
+        for (uint32_t queueFamily : uniqueQueueFamilies) {
+            VkDeviceQueueCreateInfo queueCreateInfo{};
+            queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueCreateInfo.queueFamilyIndex = queueFamily;
+            queueCreateInfo.queueCount = 1;
+            queueCreateInfo.pQueuePriorities = &queuePriority;
+            queueCreateInfos.push_back(queueCreateInfo);
+        }
 
-         VkPhysicalDeviceFeatures deviceFeatures{};
+        VkPhysicalDeviceFeatures deviceFeatures{};
 
-         /*
-          * Logical device info struct
-          */
-         VkDeviceCreateInfo createInfo{};
-         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+        /*
+        * Logical device info struct
+        */
+        VkDeviceCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 
-         createInfo.pQueueCreateInfos = &queueCreateInfo;
-         createInfo.queueCreateInfoCount = 1;
+        createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+        createInfo.pQueueCreateInfos = queueCreateInfos.data();
 
-         createInfo.pEnabledFeatures = &deviceFeatures;
+        createInfo.pEnabledFeatures = &deviceFeatures;
 
-         createInfo.enabledExtensionCount = 0;
+        createInfo.enabledExtensionCount = 0;
 
-         if (enableValidationLayers) {
-             createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-             createInfo.ppEnabledLayerNames = validationLayers.data();
-         } else {
-             createInfo.enabledLayerCount = 0;
-         }
+        if (enableValidationLayers) {
+            createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+            createInfo.ppEnabledLayerNames = validationLayers.data();
+        } else {
+            createInfo.enabledLayerCount = 0;
+        }
 
-         /*
-          * Instantiating logical device
-          */
-         if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
-             throw std::runtime_error("failed to create logical device!");
-         }
+        /*
+        * Instantiating logical device
+        */
+        if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create logical device!");
+        }
 
-         /*
-          * Retrieve queue handles for each queue family
-          */
-         vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
-     }
+        /*
+        * Retrieve graphics family and present family handles
+        */
+        vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
+        vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
+    }
 
-     /**
+    /**
       * Checks if a given device is suitable to be used as GPU
       * @param device is a VkPhysicalDevice object
       * @return boolean of if the given device has the support of the queue families
       */
-     bool isDeviceSuitable(VkPhysicalDevice device) {
-         QueueFamilyIndices indices = findQueueFamilies(device);
+    bool isDeviceSuitable(VkPhysicalDevice device) {
+        QueueFamilyIndices indices = findQueueFamilies(device);
 
-         return indices.isComplete();
-     }
+        return indices.isComplete();
+    }
 
-     /**
-      * Checks which queue families are supported by the device and which one of these supports the commands that we
-      * want to use.
+    /**
+     * Checks which queue families are supported by the device and which one of these supports the commands that we
+     * want to use.
 
-      * @param device is a VkPhysicalDevice object
-      * @return an index to the suitable queue family
-      */
-     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
+     * @param device is a VkPhysicalDevice object
+     * @return an index to the suitable queue family
+     */
+
+    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
         QueueFamilyIndices indices;
 
         uint32_t queueFamilyCount = 0;
@@ -389,11 +415,22 @@ private:
                 indices.graphicsFamily = i;
             }
 
+            VkBool32 presentSupport = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+
+            if (presentSupport) {
+                indices.presentFamily = i;
+            }
+
+            if (indices.isComplete()) {
+                break;
+            }
+
             i++;
         }
 
         return indices;
-     }
+    }
 
     /**
      * Callback function that will return the required list of extensions based on whether validation layers are
