@@ -66,6 +66,17 @@ VkAllocationCallbacks* pAllocator) {
     }
 }
 
+/**
+ * A struct that encompasses a queue family and whether it is supported by the device
+ */
+struct QueueFamilyIndices {
+    std::optional<uint32_t> graphicsFamily;
+
+    bool isComplete() {
+        return graphicsFamily.has_value();
+    }
+};
+
 
 /**
  * Main class
@@ -254,7 +265,7 @@ private:
      */
      void pickPhysicalDevice() {
          uint32_t deviceCount = 0;
-         vkEnumeratePhysicalDevice(instance, &deviceCount, nullptr);
+        vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
 
          if (deviceCount == 0) {
              throw std::runtime_error("failed to find GPUs with Vulkan support!");
@@ -274,6 +285,46 @@ private:
          if (physicalDevice == VK_NULL_HANDLE) {
              throw std::runtime_error("failed to find a suitable GPU!");
          }
+     }
+
+     /**
+      * Checks if a given device is suitable to be used as GPU
+      * @param device is a VkPhysicalDevice object
+      * @return boolean of if the given device has the support of the queue families
+      */
+     bool isDeviceSuitable(VkPhysicalDevice device) {
+         QueueFamilyIndices indices = findQueueFamilies(device);
+
+         return indices.isComplete();
+     }
+
+     /**
+      * Checks which queue families are supported by the device and which one of these supports the commands that we
+      * want to use.
+
+      * @param device is a VkPhysicalDevice object
+      * @return an index to the suitable queue family
+      */
+     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
+        QueueFamilyIndices indices;
+
+        uint32_t queueFamilyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+        // We need to find at least one queue family that supports VK_QUEUE_GRAPHICS_BIT
+        int i = 0;
+        for (const auto& queueFamily : queueFamilies) {
+            if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                indices.graphicsFamily = i;
+            }
+
+            i++;
+        }
+
+        return indices;
      }
 
     /**
