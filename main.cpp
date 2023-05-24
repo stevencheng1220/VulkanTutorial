@@ -167,6 +167,7 @@ private:
         createLogicalDevice();
         createSwapChain();
         createImageViews();
+        createGraphicsPipeline();
     }
 
     /**
@@ -545,6 +546,15 @@ private:
                 throw std::runtime_error("failed to create image views!");
             }
         }
+    }
+
+    /**
+     * Sets up a graphics pipeline that is configured to draw our first triangle. The graphics pipeline is the
+     * sequence of operations that take the vertices and textures of your meshes all the way to the pixels in the
+     * render targets.
+     */
+    void createGraphicsPipeline() {
+
     }
 
     /**
