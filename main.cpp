@@ -143,6 +143,8 @@ private:
     VkExtent2D swapChainExtent;
     std::vector<VkImageView> swapChainImageViews;
 
+    VkPipelineLayout pipelineLayout;
+
     /**
      * The given code initializes a window using the GLFW library and creates a non-resizable window for Vulkan
      * rendering. It sets up the necessary window hints, such as not using any specific graphics API by default. The
@@ -186,6 +188,8 @@ private:
      * objects, and terminates the GLFW library.
      */
     void cleanup() {
+        vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+
         for (auto imageView : swapChainImageViews) {
             vkDestroyImageView(device, imageView, nullptr);
         }
@@ -550,13 +554,12 @@ private:
     }
 
     /**
-     * Create a graphics pipeline by loading and creating shader modules for the vertex and fragment shaders.
-     * The method reads the binary code of the vertex and fragment shaders from files. It then creates shader
-     * modules for each shader by calling the `createShaderModule()` function. The created shader modules are
-     * used to populate the shader stage information, which specifies the shaders to be used in the pipeline.
-     * After the pipeline creation, the shader modules are destroyed to clean up the resources.
+     * TODO: Fix up docstring once complete
      */
     void createGraphicsPipeline() {
+        /*
+         * Creating fragment shader and vertex shader modules
+         */
         auto vertShaderCode = readFile("shaders/vert.spv");
         auto fragShaderCode = readFile("shaders/frag.spv");
 
@@ -576,6 +579,103 @@ private:
         fragShaderStageInfo.pName = "main";
 
         VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+        /*
+         * Describe format of the vertex data to be passed to vertex shader
+         */
+        VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+        vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vertexInputInfo.vertexBindingDescriptionCount = 0;
+        vertexInputInfo.vertexAttributeDescriptionCount = 0;
+
+        /*
+         * Describes geometry for vertices and if primitive restart should be enabled
+         */
+        VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+        inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+        /*
+         * Creating viewport
+         * Viewport and scissor rectangles define the region of the framebuffer where rendering will occur. In this
+         * code snippet, it indicates that a single viewport and scissor rectangle will be used, likely for simple
+         * rendering scenarios.
+         */
+        VkPipelineViewportStateCreateInfo viewportState{};
+        viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportState.viewportCount = 1;
+        viewportState.scissorCount = 1;
+
+        /*
+         * Rasterizer takes geometry shaped by the vertices (vertex shader) and turns it into fragments to be colored
+         * by fragment shader.
+         * Also performs depth testing, face culling, and the scissor test.
+         */
+        VkPipelineRasterizationStateCreateInfo rasterizer{};
+        rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizer.depthClampEnable = VK_FALSE;
+
+        rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterizer.lineWidth = 1.0f;
+        rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        rasterizer.depthBiasEnable = VK_FALSE;
+
+        /*
+         * Multisampling is one of the ways to perform anti-aliasing. It works by combining the fragment
+         * shader results of multiple polygons that rasterize to the same pixel.
+         */
+        VkPipelineMultisampleStateCreateInfo multisampling{};
+        multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisampling.sampleShadingEnable = VK_FALSE;
+        multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        /*
+         * Sets the color write mask to include all color components, disables blending, and enables a copy logical
+         * operation. Only one framebuffer attachment is used. Then, ensure that the output color of the pixel shader
+         * directly overwrites the existing color in the framebuffer without any blending or additional logical
+         * operations.
+         */
+        VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        colorBlendAttachment.blendEnable = VK_FALSE;
+
+        VkPipelineColorBlendStateCreateInfo colorBlending{};
+        colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBlending.logicOpEnable = VK_FALSE;
+        colorBlending.logicOp = VK_LOGIC_OP_COPY;
+        colorBlending.attachmentCount = 1;
+        colorBlending.pAttachments = &colorBlendAttachment;
+        colorBlending.blendConstants[0] = 0.0f;
+        colorBlending.blendConstants[1] = 0.0f;
+        colorBlending.blendConstants[2] = 0.0f;
+        colorBlending.blendConstants[3] = 0.0f;
+
+        /*
+         * Certain properties of the Vulkan pipeline state, such as viewport size, line width, and blend constants,
+         * can be modified at draw time without recreating the entire pipeline. To achieve this, utilize dynamic state.
+         */
+        std::vector<VkDynamicState> dynamicStates = {
+                VK_DYNAMIC_STATE_VIEWPORT,
+                VK_DYNAMIC_STATE_SCISSOR
+        };
+        VkPipelineDynamicStateCreateInfo dynamicState{};
+        dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+        dynamicState.pDynamicStates = dynamicStates.data();
+
+        /*
+         * Pipeline layout TODO: Add more context
+         */
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutInfo.setLayoutCount = 0;
+        pipelineLayoutInfo.pushConstantRangeCount = 0;
+
+        if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create pipeline layout!");
+        }
 
         vkDestroyShaderModule(device, fragShaderModule, nullptr);
         vkDestroyShaderModule(device, vertShaderModule, nullptr);
@@ -881,8 +981,7 @@ private:
          */
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
-        if (!file.is_open())
-        {
+        if (!file.is_open()) {
             throw std::runtime_error("failed to open file!");
         }
 
@@ -900,6 +999,7 @@ private:
         file.read(buffer.data(), fileSize);
 
         file.close();
+
         return buffer;
     }
 
