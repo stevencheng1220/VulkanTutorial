@@ -7,6 +7,7 @@
 #include <GLFW/glfw3.h>
 
 #include <iostream>
+#include <fstream>
 #include <stdexcept>
 #include <algorithm>
 #include <vector>
@@ -549,12 +550,62 @@ private:
     }
 
     /**
-     * Sets up a graphics pipeline that is configured to draw our first triangle. The graphics pipeline is the
-     * sequence of operations that take the vertices and textures of your meshes all the way to the pixels in the
-     * render targets.
+     * Create a graphics pipeline by loading and creating shader modules for the vertex and fragment shaders.
+     * The method reads the binary code of the vertex and fragment shaders from files. It then creates shader
+     * modules for each shader by calling the `createShaderModule()` function. The created shader modules are
+     * used to populate the shader stage information, which specifies the shaders to be used in the pipeline.
+     * After the pipeline creation, the shader modules are destroyed to clean up the resources.
      */
     void createGraphicsPipeline() {
+        auto vertShaderCode = readFile("shaders/vert.spv");
+        auto fragShaderCode = readFile("shaders/frag.spv");
 
+        VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+        VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+
+        VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+        vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+        vertShaderStageInfo.module = vertShaderModule;
+        vertShaderStageInfo.pName = "main";
+
+        VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+        fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        fragShaderStageInfo.module = fragShaderModule;
+        fragShaderStageInfo.pName = "main";
+
+        VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+        vkDestroyShaderModule(device, fragShaderModule, nullptr);
+        vkDestroyShaderModule(device, vertShaderModule, nullptr);
+    }
+
+    /**
+     * Create a Vulkan shader module from the provided code.
+     *
+     * @param code A vector containing the binary code of the shader.
+     * @return A Vulkan shader module.
+     * @throws std::runtime_error if the shader module creation fails.
+     */
+    VkShaderModule createShaderModule(const std::vector<char>& code) {
+        /*
+         * The sType member is set to indicate the type of structure, VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO.
+         * The codeSize member is assigned the size of the code vector, while the pCode member is assigned a
+         * reinterpretation of the code vector as a pointer to an array of const uint32_t.
+         */
+        VkShaderModuleCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        createInfo.codeSize = code.size();
+        createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+
+        VkShaderModule shaderModule;
+
+        if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create shader module!"); /* Throw an error if creation fails. */
+        }
+
+        return shaderModule;
     }
 
     /**
@@ -813,6 +864,43 @@ private:
         }
 
         return true;
+    }
+
+    /**
+     * Read the contents of a file and return them as a vector of characters.
+     *
+     * @param filename The name of the file to read.
+     * @return A vector containing the characters read from the file.
+     * @throws std::runtime_error if the file fails to open.
+     */
+    static std::vector<char> readFile(const std::string& filename)
+    {
+        /*
+         * Open the file in binary mode, starting at the end
+         * to determine the file size.
+         */
+        std::ifstream file(filename, std::ios::ate | std::ios::binary);
+
+        if (!file.is_open())
+        {
+            throw std::runtime_error("failed to open file!");
+        }
+
+        /*
+         * Determine the file size and allocate a buffer accordingly.
+         */
+        size_t fileSize = (size_t) file.tellg();
+        std::vector<char> buffer(fileSize);
+
+        /*
+         * Move the file pointer to the beginning and read
+         * the file contents into the buffer.
+         */
+        file.seekg(0);
+        file.read(buffer.data(), fileSize);
+
+        file.close();
+        return buffer;
     }
 
     /**
