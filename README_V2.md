@@ -237,16 +237,36 @@
 
 ### Fixed functions
 - Dynamic state
+    - Dynamic state allows for certain properties in a graphics pipeline to be changed during drawing without recreating the entire pipeline. Examples include viewport size, line width, and blend constants. 
+    To utilize dynamic state, a VkPipelineDynamicStateCreateInfo structure is used. This approach provides more flexibility and is commonly used for properties like viewport and scissor state, simplifying the pipeline setup.
 - Vertex input
+    - The VkPipelineVertexInputStateCreateInfo structure describes the format of the vertex data that will be passed to the vertex shader. It describes this in roughly two ways:
+        - Bindings: spacing between data and whether the data is per-vertex or per-instance (see instancing).
+        - Attribute descriptions: type of the attributes passed to the vertex shader, which binding to load them from and at which offset.
 - Input Assembly
+    - The VkPipelineInputAssemblyStateCreateInfo struct describes two things: what kind of geometry will be drawn from the vertices and if primitive restart should be enabled. 
 - Viewports and scissors
+    - The viewport specifies how the normalized device coordinates are transformed into the pixel coordinates of the framebuffer (3D to 2D).
+    - Scissor is the area where you can render, this is similar to viewport in that regard but changing the scissor rectangle doesn't affect the coordinates.
+    - These properties can be set statically in the pipeline or dynamically during command buffer recording. Dynamic state offers more flexibility and allows for multiple viewports and scissor rectangles. 
 - Rasterizer
+    - The rasterizer takes the geometry that is shaped by the vertices from the vertex shader and turns it into fragments to be colored by the fragment shader.
+    - It also performs depth testing, face culling and the scissor test, and it can be configured to output fragments that fill entire polygons or just the edges (wireframe rendering). 
+    - All this is configured using the VkPipelineRasterizationStateCreateInfo structure.
 - Multisampling
+    - The VkPipelineMultisampleStateCreateInfo struct configures multisampling, which is one of the ways to perform anti-aliasing. 
+    - It works by combining the fragment shader results of multiple polygons that rasterize to the same pixel. This mainly occurs along edges, which is also where the most noticeable aliasing artifacts occur. 
+    - Because it doesn't need to run the fragment shader multiple times if only one polygon maps to a pixel, it is significantly less expensive than simply rendering to a higher resolution and then downscaling. Enabling it requires enabling a GPU feature.
 - Depth and stencil testing
+    - If you are using a depth and/or stencil buffer, then you also need to configure the depth and stencil tests using VkPipelineDepthStencilStateCreateInfo.
 - Color blending
+    - After a fragment shader has returned a color, it needs to be combined with the color that is already in the framebuffer. This transformation is known as color blending and there are two ways to do it:
+        - Mix the old and new value to produce a final color
+        - Combine the old and new value using a bitwise operation
+    - There are two types of structs to configure color blending. The first struct, VkPipelineColorBlendAttachmentState contains the configuration per attached framebuffer and the second struct, VkPipelineColorBlendStateCreateInfo contains the global color blending settings.
 - Pipeline layout
-- Conclusion
-
+    - Pipeline layout is used to specify uniform values in shaders, allowing for dynamic changes without shader recreation. These values are often used for transformations or texture samplers. 
+    - During pipeline creation, a VkPipelineLayout object needs to be created, even if it's empty at this stage.
 <br></br>
 
 

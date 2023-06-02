@@ -143,6 +143,7 @@ private:
     VkExtent2D swapChainExtent;
     std::vector<VkImageView> swapChainImageViews;
 
+    VkRenderPass renderPass;
     VkPipelineLayout pipelineLayout;
 
     /**
@@ -170,6 +171,7 @@ private:
         createLogicalDevice();
         createSwapChain();
         createImageViews();
+        createRenderPass();
         createGraphicsPipeline();
     }
 
@@ -189,6 +191,7 @@ private:
      */
     void cleanup() {
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+        vkDestroyRenderPass(device, renderPass, nullptr);
 
         for (auto imageView : swapChainImageViews) {
             vkDestroyImageView(device, imageView, nullptr);
@@ -551,6 +554,36 @@ private:
                 throw std::runtime_error("failed to create image views!");
             }
         }
+    }
+
+    /**
+     * Before we can finish creating the pipeline, we need to tell Vulkan about the framebuffer attachments that will
+     * be used while rendering. We need to specify how many color and depth buffers there will be, how many samples
+     * to use for each of them and how their contents should be handled throughout the rendering operations. All of
+     * this information is wrapped in a render pass object, for which we'll create a new createRenderPass function.
+     */
+    void createRenderPass() {
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format = swapChainImageFormat;
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // no multisampling, so 1 sample
+
+        /*
+         * LoadOp and storeOp determine what to do with the data in the attachment before rendering
+         * and after rendering
+         */
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+        /*
+         * Not applying stencil data
+         */
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        /*
+         * 
+         */
+
     }
 
     /**
