@@ -272,47 +272,105 @@
 
 ### Render pass
 - Setup
+    - Before we can finish creating the pipeline, we need to tell Vulkan about the framebuffer attachments that will be used while rendering. 
+    - We need to specify how many color and depth buffers there will be, how many samples to use for each of them and how their contents should be handled throughout the rendering operations. All of this information is wrapped in a render pass object.
 - Attachment description
+    - The code is defining a render pass in Vulkan with a single color buffer attachment. The color attachment's format matches the swap chain images, and there is no multisampling. 
+    - The loadOp is set to clear the attachment to a constant value (black) before rendering, and the storeOp is set to store the rendered contents for later reading. The stencilLoadOp and stencilStoreOp are set to VK_ATTACHMENT_LOAD_OP_DONT_CARE and VK_ATTACHMENT_STORE_OP_DONT_CARE, respectively, indicating that the stencil buffer is not used. 
+    - The initialLayout is VK_IMAGE_LAYOUT_UNDEFINED, indicating that the previous layout of the image doesn't matter, and the finalLayout is VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, indicating that the image should be ready for presentation using the swap chain after rendering.
 - Subpasses and attachment references
+    - A single render pass can consist of multiple subpasses. Subpasses are subsequent rendering operations that depend on the contents of framebuffers in previous passes, for example a sequence of post-processing effects that are applied one after another. 
+    - If you group these rendering operations into one render pass, then Vulkan is able to reorder the operations and conserve memory bandwidth for possibly better performance. 
 - Render pass
+    - Implementation details (skip)
 
 <br></br>
 
 
 ### Conclusion
+- We can now combine all the structures and objects from the previous chapters to create a graphics pipeline! Here's the types of objects we have now, as a quick recap:
+    - Shader stages
+        - The shader modules that define the functionality of the programmable stages of the graphics pipeline.
+    - Fixed-function state
+        - All of the structures that define the fixed-function stages of the pipeline, like input assembly, rasterizer, viewport and color blending.
+    - Pipeline layout
+        - The uniform and push values referenced by the shader that can be updated at draw time.
+    - Render pass
+        - The attachments referenced by the pipeline stages and their usage.
 
 <br></br>
 
 
 ## Drawing
 
-<br></br>
-
-
 ### Framebuffers
-
+- A framebuffer is a collection of image resources used for rendering or post-processing, It represents the final output displayed on the screen or used for further processing.
+- A framebuffer consists of attachments, such as color buffers and depth buffers, which store pixel data. These attachments are created with specific properties, like format and size, and are associated with a render pass that defines the rendering operations.
+- By binding a framebuffer to the graphics pipeline, the output of rendering commands can be directed to its attachments.
 <br></br>
 
 
 ### Command buffers
 - Command pools
+    - Commands in Vulkan, like drawing operations and memory transfers, are not executed directly using function calls. You have to record all of the operations you want to perform in command buffer objects.
+    - The advantage of this is that when we are ready to tell the Vulkan what we want to do, all of the commands are submitted together and Vulkan can more efficiently process the commands since all of them are available together.
+    - Before creating command buffers, we have to create a command pool. Command pools manage the memory that is used to store the buffers and command buffers are allocated from them.
 - Command buffer allocation
+    - To allocate command buffers in Vulkan, we create a VkCommandBuffer object and allocate it from a command pool using the vkAllocateCommandBuffers function. 
+    - The allocation is performed in the createCommandBuffer function, which takes a VkCommandBufferAllocateInfo struct specifying the command pool and the number of buffers to allocate. 
+    - The level parameter determines whether the command buffers are primary or secondary, with primary buffers being executable and secondary buffers being callable from primary ones. 
 - Command buffer recording
+    - Recording begins by calling vkBeginCommandBuffer, passing a VkCommandBufferBeginInfo structure that specifies the details of the command buffer usage.
+    - If the recording starts successfully, we can proceed to add commands to the buffer. It's important to note that once a command buffer is recorded, it cannot be appended to later. If needed, the buffer must be reset before starting a new recording.
 - Starting a render pass
+    - To begin rendering in Vulkan, we use the vkCmdBeginRenderPass command. It requires a VkRenderPassBeginInfo structure to configure the render pass. This structure includes the render pass itself and the framebuffer to bind. 
+    - The framebuffer is selected based on the swapchain image index to determine the appropriate color attachment. The render area is specified to define the size of the area where shader loads and stores will occur. It should match the attachment size for optimal performance. 
+    - Clear values can be provided for clearing the attachments, such as the color attachment, and in this case, a black color with full opacity is used.
 - Basic drawing commands
-- Finishing up
-
+    - Basic drawing commands involve binding the graphics pipeline using vkCmdBindPipeline, setting the viewport and scissor state with vkCmdSetViewport and vkCmdSetScissor, and issuing the draw command with vkCmdDraw.
 <br></br>
 
 
 ### Rendering and presentation
 - Outline of a frame
+    - At a high level, rendering a frame in Vulkan consists of a common set of steps:
+        - Wait for the previous frame to finish.
+        - Acquire an image from the swap chain.
+        - Record a command buffer which draws the scene onto that image.
+        - Submit the recorded command buffer.
+        - Present the swap chain image.
 - Synchronization
+    - A core design philosophy in Vulkan is that synchronization of execution on the GPU is explicit. 
+    - The order of operations is up to us to define using various synchronization primitives which tell the driver the order we want things to run in. This means that many Vulkan API calls which start executing work on the GPU are asynchronous, the functions will return before the operation has finished.
+    - In this chapter there are a number of events that we need to order explicitly because they happen on the GPU, such as:
+        - Acquire an image from the swap chain
+        - Execute commands that draw onto the acquired image
+        - Present that image to the screen for presentation, returning it to the swapchain
+    - Each of these events is set in motion using a single function call, but are all executed asynchronously. 
+    - The function calls will return before the operations are actually finished and the order of execution is also undefined. We need to explore which primitives we can use to achieve the desired ordering.
+- Semaphores
+    - A semaphore is used to add order between queue operations. Queue operations refer to the work we submit to a queue, either in a command buffer or from within a function.
+    - There are two kinds of semaphores in Vulkan, binary and timeline, Because only binary semaphores will be used in this tutorial, we will not discuss timeline semaphores.
+    - A semaphore is a synchronization mechanism that can be in either a signaled or unsignaled state. Initially, a semaphore is unsignaled. In the context of ordering queue operations, we can use a semaphore by designating it as a "signal" semaphore in one operation and as a "wait" semaphore in another operation.
+- Fences
+    - A fence has a similar purpose, in that it is used to synchronize execution, but it is for ordering the execution on the CPU, otherwise known as the host. Simply put, if the host needs to know when the GPU has finished something, we use a fence.
+    - Similar to semaphores, fences are either in a signaled or unsignaled state. Whenever we submit work to execute, we can attach a fence to that work. 
+    - When the work is finished, the fence will be signaled. Then we can make the host wait for the fence to be signaled, guaranteeing that the work has finished before the host continues.
 - Creating the synchronization objects
+    - Implementation details (skip)
 - Waiting for the previous frame
+    - In order to wait for the previous frame to finish before starting a new frame in Vulkan, we use the vkWaitForFences function. It waits for the specified fence (inFlightFence) to be signaled before continuing. 
+    - After waiting, we reset the fence to an unsignaled state using vkResetFences. However, in the first frame, there is no previous frame to signal the fence, so we create the fence with the VK_FENCE_CREATE_SIGNALED_BIT flag to ensure it is initially signaled and the waiting call returns immediately.
 - Acquiring an image from the swap chain
+    - The next thing we need to do is acquire an image from the swap chain.
+    - The first two parameters of vkAcquireNextImageKHR are the logical device and the swap chain from which we wish to acquire an image. The third parameter specifies a timeout in nanoseconds for an image to become available.
+    - The next two parameters specify synchronization objects that are to be signaled when the presentation engine is finished using the image. That's the point in time where we can start drawing to it. It is possible to specify a semaphore, fence or both.
+    - The last parameter specifies a variable to output the index of the swap chain image that has become available. 
 - Recording the command buffer
+    - With the imageIndex specifying the swap chain image to use in hand, we can now record the command buffer. First, we call vkResetCommandBuffer on the command buffer to make sure it is able to be recorded.
+    - Then we can record command buffer.
 - Submitting the command buffer
+    - 
 - Subpass dependencies
 - Presentation
 - Conclusion
