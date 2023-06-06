@@ -390,3 +390,146 @@
 - Fixing a deadlock
 - Handling resizes explicitly
 - Handling minimization
+<br></br>
+
+# Vertex buffers
+
+## Vertex input description
+- Introduction
+- Vertex shader
+- Vertex data
+- Binding descriptions
+- Attribute descriptions
+- Pipeline vertex input
+<br></br>
+
+## Vertex buffer creation
+- Introduction
+- Buffer creation
+- Memory requirements
+- Memory allocation
+- Filling the vertex buffer
+- Binding the vertex buffer
+<br></br>
+
+## Staging buffer
+- Introduction
+- Transfer queue
+- Abstracting buffer creation
+- Using a staging buffer
+- Conclusion
+<br></br>
+
+## Index buffer
+- Introduction
+- Index buffer creation
+- Using an index buffer
+<br></br>
+
+# Uniform buffers
+
+## Descriptor layout and buffer
+- Introduction
+- Vertex shader
+- Descriptor set layout
+- Uniform buffer
+- Updating uniform data
+<br></br>
+
+## Descriptor pool and sets
+- Introduction
+- Descriptor pool
+- Descriptor set
+- Using descriptor sets
+- Alignment requirements
+- Multiple descriptor sets
+<br></br>
+
+# Texture mapping
+
+## Images
+- Introduction
+- Imagae library
+- Loading an image
+- Staging buffer
+- Texture Image
+- Layout transitions
+- Copying buffer to image
+- Preparing the texture image
+- Transition barrier masks
+- Cleanup
+<br></br>
+
+## Image view and sampler
+- Texture image view
+- Samplers
+- Anisotropy device feature
+<br></br>
+
+## Combined image sampler
+- Introduction
+- Updating the descriptors
+- Texture coordinates
+- Shaders
+<br></br>
+
+# Depth buffering
+- Introduction
+- 3D geometry
+- Depth image and view
+- Explicitly transitioning the depth image
+- Render pass
+- Framebuffer
+- Clear values
+- Depth and stencil state
+- Handling window resize
+<br></br>
+
+# Loading models
+- Introduction
+- Library
+- Sample mesh
+- Loading vertices and indices
+- Vertex deduplication
+<br></br>
+
+# Generating Mipmaps
+- Introduction
+- Image creation
+- Generating Mipmaps
+- Linear filtering support
+- Sampler
+<br></br>
+
+# Multisampling
+- Introduction
+- Getting available sample count
+- Setting up a render target
+- Adding new attachments
+- Quality improvements
+- Conclusion
+<br></br>
+
+# Computer Shader
+- Introduction
+- Advantages
+- The Vulkan pipeline
+- An example
+- Data manipulation
+- Shader storage buffer objects (SSBO)
+- Storage images
+- Compute queue families
+- The compute shader stage
+- Loading compute shaders
+- Preparing the shader storage buffers
+- Descriptors
+- Compute pipelines
+- Compute space
+- Compute shaders
+- Running compute commands
+- Dispatch
+- Submitting work
+- Synchronizing graphics and compute
+- Drawing the particle system
+- Conclusion
+<br></br>

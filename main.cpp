@@ -18,11 +18,16 @@
 #include <optional>
 #include <set>
 
+//const char* VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME = "VK_KHR_portability_enumeration";
+//const auto VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR = 0x00000001;
+
 /*
  * Variables for window dimensions
  */
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
+
+const int MAX_FRAMES_IN_FLIGHT = 2;
 
 /*
  * Validation layers used
@@ -142,10 +147,18 @@ private:
     VkFormat swapChainImageFormat;
     VkExtent2D swapChainExtent;
     std::vector<VkImageView> swapChainImageViews;
+    std::vector<VkFramebuffer> swapChainFramebuffers;
 
     VkRenderPass renderPass;
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
+
+    VkCommandPool commandPool;
+    VkCommandBuffer commandBuffer;
+
+    VkSemaphore imageAvailableSemaphore;
+    VkSemaphore renderFinishedSemaphore;
+    VkFence inFlightFence;
 
     /**
      * The given code initializes a window using the GLFW library and creates a non-resizable window for Vulkan
@@ -174,6 +187,10 @@ private:
         createImageViews();
         createRenderPass();
         createGraphicsPipeline();
+        createFramebuffers();
+        createCommandPool();
+        createCommandBuffer();
+        createSyncObjects();
     }
 
     /**
@@ -183,7 +200,10 @@ private:
     void mainLoop() {
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
+            drawFrame();
         }
+
+        vkDeviceWaitIdle(device);
     }
 
     /**
@@ -191,6 +211,16 @@ private:
      * objects, and terminates the GLFW library.
      */
     void cleanup() {
+        vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
+        vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+        vkDestroyFence(device, inFlightFence, nullptr);
+
+        vkDestroyCommandPool(device, commandPool, nullptr);
+
+        for (auto framebuffer : swapChainFramebuffers) {
+            vkDestroyFramebuffer(device, framebuffer, nullptr);
+        }
+
         vkDestroyPipeline(device, graphicsPipeline, nullptr);
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
         vkDestroyRenderPass(device, renderPass, nullptr);
@@ -265,6 +295,18 @@ private:
          * Return the required list of extensions based on whether validation layers are enabled or not
          */
         auto extensions = getRequiredExtensions();
+
+        /*
+         * Fix for `Encountered VK_ERROR_INCOMPATIBLE_DRIVER`
+         * For more information: https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Instance
+         */
+//        for (uint32_t i = 0; i < glfwExtensionCount; i++) {
+//            extensions.emplace_back(glfwExtensions[i]);
+//        }
+//
+//        extensions.emplace_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+//        createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+
         createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
         createInfo.ppEnabledExtensionNames = extensions.data();
 
@@ -601,6 +643,17 @@ private:
         subpass.pColorAttachments = &colorAttachmentRef;
 
         /*
+         * Create subpass dependencies
+         */
+        VkSubpassDependency dependency{};
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass = 0;
+        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.srcAccessMask = 0;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+        /*
          * Create render pass using attachment and subpass referencing
          */
         VkRenderPassCreateInfo renderPassInfo{};
@@ -609,6 +662,8 @@ private:
         renderPassInfo.pAttachments = &colorAttachment;
         renderPassInfo.subpassCount = 1;
         renderPassInfo.pSubpasses = &subpass;
+        renderPassInfo.dependencyCount = 1;
+        renderPassInfo.pDependencies = &dependency;
 
         if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
             throw std::runtime_error("failed to create render pass!");
@@ -622,8 +677,8 @@ private:
         /*
          * Creating fragment shader and vertex shader modules
          */
-        auto vertShaderCode = readFile("shaders/vert.spv");
-        auto fragShaderCode = readFile("shaders/frag.spv");
+        auto vertShaderCode = readFile("/Users/stevencheng/CLionProjects/VulkanTutorial/shaders/vert.spv");
+        auto fragShaderCode = readFile("/Users/stevencheng/CLionProjects/VulkanTutorial/shaders/frag.spv");
 
         VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
         VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
@@ -740,9 +795,10 @@ private:
         }
 
         /*
-         * Initializes graphics pipline struct
+         * Initializes graphics pipeline struct
          */
         VkGraphicsPipelineCreateInfo pipelineInfo{};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         pipelineInfo.stageCount = 2;
         pipelineInfo.pStages = shaderStages;
 
@@ -775,6 +831,226 @@ private:
 
         vkDestroyShaderModule(device, fragShaderModule, nullptr);
         vkDestroyShaderModule(device, vertShaderModule, nullptr);
+    }
+
+    /**
+     * Creates framebuffers by iterating through each image view and creating a framebuffer using the corresponding
+     * attachments. The framebuffer is configured with the render pass, attachment count, attachments array, width,
+     * height, and layers.
+     */
+    void createFramebuffers() {
+        swapChainFramebuffers.resize(swapChainImageViews.size());
+
+        /*
+         * Iterate through image views and create framebuffers
+         */
+        for (size_t i = 0; i < swapChainImageViews.size(); i++) {
+            VkImageView attachments[] = {
+                    swapChainImageViews[i]
+            };
+
+            VkFramebufferCreateInfo framebufferInfo{};
+            framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            framebufferInfo.renderPass = renderPass;
+            framebufferInfo.attachmentCount = 1;
+            framebufferInfo.pAttachments = attachments;
+            framebufferInfo.width = swapChainExtent.width;
+            framebufferInfo.height = swapChainExtent.height;
+            framebufferInfo.layers = 1;
+
+            if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
+                throw std::runtime_error("failed to create framebuffer!");
+            }
+        }
+    }
+
+    /**
+     * Serves the purpose of creating a command pool, which is a container for allocating and managing command
+     * buffers. Command pools are associated with specific queue families and are used to control command buffer
+     * execution on those queues.
+     */
+    void createCommandPool() {
+        QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+
+        VkCommandPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+
+        if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create command pool!");
+        }
+    }
+
+    /**
+     * Responsible for allocating a command buffer within a specified command pool in Vulkan. A command buffer is a
+     * data structure that holds a sequence of commands to be executed by the GPU.
+     */
+    void createCommandBuffer() {
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.commandPool = commandPool;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandBufferCount = 1;
+
+        if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate command buffers!");
+        }
+    }
+
+    /**
+     * Responsible for recording commands into a specified command buffer in Vulkan. This is a critical step in the
+     * graphics pipeline as it defines the sequence of operations to be executed by the GPU for rendering.
+
+     * Begins by initializing the command buffer and setting up the render pass. Then, it binds the graphics pipeline
+     * and specifies viewport and scissor settings. The code includes a draw command to define the rendering
+     * parameters. Finally, the render pass is ended, and the command buffer recording is completed. This process
+     * establishes the sequence of operations to be executed by the GPU for rendering a frame in Vulkan.
+     */
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+        /*
+         * Initialize command buffer
+         */
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+         throw std::runtime_error("failed to begin recording command buffer!");
+        }
+
+        /*
+         * Initializing render pass
+         */
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = renderPass;
+        renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
+        renderPassInfo.renderArea.offset = {0, 0};
+        renderPassInfo.renderArea.extent = swapChainExtent;
+
+        VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearColor;
+
+        vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        /*
+         * Bind graphics pipeline by specifying pipeline is a graphics one.
+         * Then, specify viewport and scissor state for this pipeline to be dynamic.
+         */
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(swapChainExtent.width);
+        viewport.height = static_cast<float>(swapChainExtent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = swapChainExtent;
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+        int numVertices = 3;
+        int nonInstanceRenderingFlag = 1;
+        int firstVertexOffset = 0;
+        int firstInstanceOffset = 0;
+        vkCmdDraw(commandBuffer, numVertices, nonInstanceRenderingFlag, firstVertexOffset, firstInstanceOffset);
+
+        vkCmdEndRenderPass(commandBuffer);
+
+        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to record command buffer!");
+        }
+    }
+
+    /**
+     * Responsible for creating synchronization objects, namely semaphores and fences, which ensure proper
+     * coordination and synchronization between different stages of rendering.
+     */
+    void createSyncObjects() {
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS ||
+            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS ||
+            vkCreateFence(device, &fenceInfo, nullptr, &inFlightFence) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create synchronization objects for a frame!");
+        }
+
+    }
+
+    /**
+     * Handles the rendering of a single frame. It waits for the previous frame to finish using fences, acquires the
+     * next available image from the swap chain, records the rendering commands into a command buffer, submits the
+     * command buffer to the graphics queue, and presents the result back to the swap chain for display. This process
+     * ensures proper synchronization and execution of rendering operations for each frame.
+     */
+    void drawFrame() {
+        /*
+         * Wait until previous frame has finished
+         */
+        vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
+        vkResetFences(device, 1, &inFlightFence);
+
+        /*
+         * Acquire next image from swap chain
+         */
+        uint32_t imageIndex;
+        vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+
+        /*
+         * Record command buffer, first reset command buffer.
+         */
+        vkResetCommandBuffer(commandBuffer, /*VkCommandBufferResetFlagBits*/ 0);
+        recordCommandBuffer(commandBuffer, imageIndex);
+
+        /*
+         * Submit command buffer
+         */
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+        VkSemaphore waitSemaphores[] = {imageAvailableSemaphore};
+        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = waitSemaphores;
+        submitInfo.pWaitDstStageMask = waitStages;
+
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+
+        VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = signalSemaphores;
+
+        if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS) {
+            throw std::runtime_error("failed to submit draw command buffer!");
+        }
+
+        /*
+         * Presentation - submitting result back to swap chain to show up on screen
+         */
+        VkPresentInfoKHR presentInfo{};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = signalSemaphores;
+
+        VkSwapchainKHR swapChains[] = {swapChain};
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = swapChains;
+
+        presentInfo.pImageIndices = &imageIndex;
+
+        vkQueuePresentKHR(presentQueue, &presentInfo);
     }
 
     /**
@@ -823,22 +1099,6 @@ private:
 
     /**
      * Chooses the preferred presentation mode for displaying images on a Vulkan surface.
-     * There are four possible modes available in Vulkan:
-     *      VK_PRESENT_MODE_IMMEDIATE_KHR: Images submitted by your application are transferred to the screen right
-     *      away, which may result in tearing.
-     *      VK_PRESENT_MODE_FIFO_KHR: The swap chain is a queue where the display takes an image from the front of
-     *      the queue when the display is refreshed and the program inserts rendered images at the back of the queue.
-     *      If the queue is full then the program has to wait. This is most similar to vertical sync as found in
-     *      modern games. The moment that the display is refreshed is known as "vertical blank".
-     *      VK_PRESENT_MODE_FIFO_RELAXED_KHR: This mode only differs from the previous one if the application is
-     *      late and the queue was empty at the last vertical blank. Instead of waiting for the next vertical blank,
-     *      the image is transferred right away when it finally arrives. This may result in visible tearing.
-     *      VK_PRESENT_MODE_MAILBOX_KHR: This is another variation of the second mode. Instead of blocking the
-     *      application when the queue is full, the images that are already queued are simply replaced with the
-     *      newer ones. This mode can be used to render frames as fast as possible while still avoiding tearing,
-     *      resulting in fewer latency issues than standard vertical sync. This is commonly known as "triple
-     *      buffering", although the existence of three buffers alone does not necessarily mean that the framerate is
-     *      unlocked.
      * @param availablePresentModes is a vector of all possible presentation modes
      * @return the preferred mailbox mode
      */
