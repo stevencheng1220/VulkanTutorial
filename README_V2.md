@@ -370,26 +370,49 @@
     - With the imageIndex specifying the swap chain image to use in hand, we can now record the command buffer. First, we call vkResetCommandBuffer on the command buffer to make sure it is able to be recorded.
     - Then we can record command buffer.
 - Submitting the command buffer
-    - 
+    - In Vulkan, a command buffer is submitted through queue submission, using the VkSubmitInfo structure to manage synchronization. 
+    - Semaphores dictate when to begin execution and at which pipeline stages, aiming to delay writing colors until images are available. 
+    - Command buffers are submitted for execution, and specified semaphores are signaled once this is complete. 
+    - Through the use of vkQueueSubmit and an optional fence, this process can manage command buffer reuse, by signalling when execution has finished and it's safe to begin recording new commands.
 - Subpass dependencies
+    - In Vulkan, subpass dependencies manage image layout transitions within a render pass. These dependencies specify memory and execution relations between subpasses, including operations before and after the subpass. 
+    - Built-in dependencies handle transitions at the start and end of the render pass, but timing issues can arise. One solution is to make the render pass wait for a specific pipeline stage. 
+    - Subpass dependencies are defined via VkSubpassDependency structures, detailing the dependency and dependent subpass, operations to wait on and their respective stages. Ultimately, these configurations ensure proper execution sequence, preventing premature transitions and ensuring that necessary operations like color writing are completed at the right time.
 - Presentation
-- Conclusion
-
+    - In Vulkan, the final stage of rendering a frame is submission of the frame to the swap chain for display, a process known as presentation. 
+    - This process utilizes a VkPresentInfoKHR structure to configure the parameters. The waitSemaphoreCount and pWaitSemaphores parameters define which semaphores should be waited on before the presentation begins, while the swapchainCount, pSwapchains, and pImageIndices parameters specify the swap chains to which images are presented and the index of the image in each swap chain.
+    - The vkQueuePresentKHR function is used to submit the request to present an image to the swap chain.
 <br></br>
 
-
 ### Frames in flight
-
+- Frames in flight
+    - Right now our render loop has one glaring flaw. We are required to wait on the previous frame to finish before we can start rendering the next which results in unnecessary idling of the host.
+    - The way to fix this is to allow multiple frames to be in-flight at once, that is to say, allow the rendering of one frame to not interfere with the recording of the next. 
+    - How do we do this? Any resource that is accessed and modified during rendering must be duplicated. Thus, we need multiple command buffers, semaphores, and fences. In later chapters we will also add multiple instances of other resources, so we will see this concept reappear.
 <br></br>
 
 
 ## Swap chain recreation
 - Introduction
+    - The application we have now successfully draws a triangle, but there are some circumstances that it isn't handling properly yet. It is possible for the window surface to change such that the swap chain is no longer compatible with it. One of the reasons that could cause this to happen is the size of the window changing. We have to catch these events and recreate the swap chain.
 - Recreating the swap chain
+    - Swap chain can be recreated through a sequence of operations involving: waiting for the device to become idle, cleaning up the old swap chain and related resources, then creating a new swap chain, image views, and framebuffers.
+    - Cleanup includes destroying the framebuffers, image views, and the swap chain itself. While this approach requires halting all rendering during the swap chain recreation, it's possible to construct a new swap chain while commands from the old swap chain are still in-flight. 
+    - However, this involves passing the previous swap chain to the oldSwapChain field in the VkSwapchainCreateInfoKHR structure, and destroying it once it's no longer in use.
 - Suboptimal or out-of-date swap chain
+    - Swap chain recreation is necessitated by two key signals: VK_ERROR_OUT_OF_DATE_KHR, indicating incompatibility with the surface often due to window resizing, and VK_SUBOPTIMAL_KHR, indicating that the swap chain can present to the surface, but its properties no longer match it perfectly. 
+    - Both vkAcquireNextImageKHR and vkQueuePresentKHR functions can return these values. When either of these conditions is encountered, the swap chain should be recreated to ensure optimal rendering. This recreation should ideally take place immediately upon receiving these signals to avoid presentation issues.
 - Fixing a deadlock
+    - A deadlock can occur if an application reaches vkWaitForFences but never proceeds beyond it, often due to the early resetting of a fence which is then never signaled. 
+    - This can occur when vkAcquireNextImageKHR returns VK_ERROR_OUT_OF_DATE_KHR, leading to the swapchain's recreation and an immediate return from drawFrame. The deadlock can be prevented by delaying the resetting of the fence until it is certain that work will be submitted with it. 
+    - If an early return occurs, the fence remains signaled, and vkWaitForFences won't cause a deadlock during the next use of the same fence object.
 - Handling resizes explicitly
+    - Although many platforms automatically trigger a VK_ERROR_OUT_OF_DATE_KHR upon window resizing, Vulkan doesn't guarantee this. Therefore, explicit handling of resizes is crucial. 
+    - This can be achieved by adding a framebufferResized boolean variable and checking it alongside other conditions in the drawFrame function. To detect resizes, GLFW's glfwSetFramebufferSizeCallback function is used to set up a callback. 
+    - Further, an arbitrary pointer can be stored in the GLFWwindow using glfwSetWindowUserPointer, enabling retrieval of the application instance within the callback to properly set the framebufferResized flag. This mechanism ensures the framebuffer resizes properly along with the window.
 - Handling minimization
+    - There is another case where a swap chain may become out of date and that is a special kind of window resizing: window minimization. 
+    - This case is special because it will result in a frame buffer size of 0. In this tutorial we will handle that by pausing until the window is in the foreground again.
 <br></br>
 
 # Vertex buffers
