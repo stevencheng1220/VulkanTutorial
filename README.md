@@ -419,34 +419,72 @@
 
 ## Vertex input description
 - Introduction
+    - We now need to replace the hardcoded vertex data in the vertex shader with a vertex buffer in memory.
 - Vertex shader
+    - Implementation details (skip)
 - Vertex data
+    - Implementation details (skip)
 - Binding descriptions
+    - Binding descriptions are used to specify how data formats are passed to the vertex shader after being uploaded to GPU memory. 
+    - The VkVertexInputBindingDescription structure determines the rate at which data is loaded from memory, specifying the byte distance between data entries and whether to move to the next entry after each vertex or instance. 
+    - In this case, since the per-vertex data is packed in one array, a single binding is used with the stride parameter indicating the byte distance between entries. The inputRate parameter is set to VK_VERTEX_INPUT_RATE_VERTEX for per-vertex data, as instanced rendering is not utilized.
 - Attribute descriptions
+    - Attribute descriptions are used to specify how vertex attributes are extracted from vertex data based on binding descriptions. The VkVertexInputAttributeDescription structure is used for this purpose.
+    - In this case, two attribute descriptions are needed for the position and color attributes. The binding parameter indicates the source binding of the data, while the location parameter corresponds to the location directive in the vertex shader.
+    - The format parameter defines the data type of the attribute, using color format enumerations. The offset parameter specifies the byte offset within the vertex data structure.
 - Pipeline vertex input
+    - Implementation details (skip)
 <br></br>
 
 ## Vertex buffer creation
 - Introduction
+    - Buffers in Vulkan are regions of memory used for storing arbitrary data that can be read by the graphics card. They can be used to store vertex data.
+    - Unlike the Vulkan objects we've been dealing with so far, buffers do not automatically allocate memory for themselves.
 - Buffer creation
+    - Creating a buffer involves filling a VkBufferCreateInfo structure. The size field specifies the size of the buffer in bytes, typically calculated using the sizeof operator. The usage field indicates the purpose of the data in the buffer, such as a vertex buffer. The sharingMode field determines whether the buffer is exclusively owned by a queue family or shared between multiple families. The flags parameter is used for configuring sparse buffer memory, which is not relevant in this case. 
+    - The buffer is created using vkCreateBuffer, and the resulting buffer handle can be used for rendering commands.
 - Memory requirements
+    - After creating a buffer, memory needs to be allocated for it. The vkGetBufferMemoryRequirements function is used to query the memory requirements of the buffer. 
+    - The VkMemoryRequirements structure provides information such as the required size of memory, the offset where the buffer begins, and the suitable memory types. 
+    - Available memory types can be obtained using vkGetPhysicalDeviceMemoryProperties. To find a suitable memory type, iterates over the memory types and checks for compatibility with the buffer and desired properties.
 - Memory allocation
+    - Memory allocation for a buffer involves filling the VkMemoryAllocateInfo structure. The allocationSize field is set to the size of memory required, obtained from the memory requirements of the buffer. The memoryTypeIndex field is determined by a suitable memory type based on the buffer's requirements and desired properties. 
+    - Memory is allocated using vkAllocateMemory, and the resulting memory handle is associated with the buffer using vkBindBufferMemory. When cleaning up, the allocated memory is freed using vkFreeMemory after destroying the buffer.
 - Filling the vertex buffer
+    - Filling the vertex buffer involves mapping the buffer memory using vkMapMemory. This allows CPU access to a specified region of memory. The vertex data can then be copied to the mapped memory using memcpy. Afterward, the memory is unmapped using vkUnmapMemory. 
+    - To ensure the data is visible to the GPU, either a host-coherent memory heap can be used or vkFlushMappedMemoryRanges and vkInvalidateMappedMemoryRanges can be called. The transfer of data to the GPU occurs in the background and is guaranteed to be complete as of the next call to vkQueueSubmit.
 - Binding the vertex buffer
+    - Binding the vertex buffer for rendering involves adding additional commands to the recording of the command buffer. The vkCmdBindVertexBuffers function is used to bind the vertex buffer to a binding point. The offset and number of bindings are specified, along with the array of vertex buffers and their respective byte offsets. 
+    - Additionally, the vkCmdDraw function should be updated to use the number of vertices in the buffer instead of a hardcoded value. This ensures that the correct number of vertices is drawn during rendering operations.
 <br></br>
 
 ## Staging buffer
 - Introduction
+    - To optimize memory usage, we create two vertex buffers: a staging buffer in CPU accessible memory for uploading data from the vertex array, and a final vertex buffer in device local memory, which is more optimal for the graphics card to read from. We then use a buffer copy command to transfer the data from the staging buffer to the actual vertex buffer.
 - Transfer queue
+    - The buffer copy command requires a queue family that supports transfer operations, which is indicated using VK_QUEUE_TRANSFER_BIT. 
+    - The good news is that any queue family with VK_QUEUE_GRAPHICS_BIT or VK_QUEUE_COMPUTE_BIT capabilities already implicitly support VK_QUEUE_TRANSFER_BIT operations. The implementation is not required to explicitly list it in queueFlags in those cases.
 - Abstracting buffer creation
+    - Implementation details (skip)
 - Using a staging buffer
+    - By using a staging buffer, the CPU can quickly write the vertex data to a buffer that is accessible by both the CPU and GPU. This allows for efficient transfer of data from system memory to the GPU's device-local memory. Device-local memory is typically faster to access by the GPU, resulting in improved rendering performance.
+    - To facilitate the transfer, a command buffer is allocated and used to record the transfer operation. The vkCmdCopyBuffer function is employed to copy the contents of the staging buffer to the vertex buffer. Once the transfer command is recorded in the command buffer, it is submitted to the graphics queue for execution using vkQueueSubmit. The vkQueueWaitIdle function ensures that the transfer is completed before proceeding.
 - Conclusion
+    - It should be noted that in a real world application, you're not supposed to actually call vkAllocateMemory for every individual buffer. The maximum number of simultaneous memory allocations is limited by the maxMemoryAllocationCount physical device limit, which may be as low as 4096 even on high end hardware like an NVIDIA GTX 1080. 
+    - The right way to allocate memory for a large number of objects at the same time is to create a custom allocator that splits up a single allocation among many different objects by using the offset parameters that we've seen in many functions.
+    - You can either implement such an allocator yourself, or use the VulkanMemoryAllocator library provided by the GPUOpen initiative. 
 <br></br>
 
 ## Index buffer
 - Introduction
+    - The 3D meshes you'll be rendering in a real world application will often share vertices between multiple triangles. E.g.:
+    ![Alt text](README_Media/index_buffer_share_vertices.svg)
+    - Drawing a rectangle takes two triangles, which means that we need a vertex buffer with 6 vertices. The problem is that the data of two vertices needs to be duplicated resulting in 50% redundancy. It only gets worse with more complex meshes, where vertices are reused in an average number of 3 triangles. The solution to this problem is to use an index buffer.
+    - An index buffer is essentially an array of pointers into the vertex buffer. It allows you to reorder the vertex data, and reuse existing data for multiple vertices. The illustration above demonstrates what the index buffer would look like for the rectangle if we have a vertex buffer containing each of the four unique vertices. The first three indices define the upper-right triangle and the last three indices define the vertices for the bottom-left triangle.
 - Index buffer creation
+    - Implementation details (skip)
 - Using an index buffer
+    - Implementation details (skip)
 <br></br>
 
 # Uniform buffers
