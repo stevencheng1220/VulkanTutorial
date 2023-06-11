@@ -1,0 +1,48 @@
+{
+    "files.associations": {
+        "optional": "cpp",
+        "algorithm": "cpp",
+        "array": "cpp",
+        "vector": "cpp",
+        "cstdlib": "cpp"
+    }
+
+    "editor.tokenColorCustomizations": {
+        "[Cobalt2]": {
+            "textMateRules": [
+                {
+                    "scope": [
+                        "comment.block",
+                        "punctuation.definition.comment.end",
+                        "punctuation.definition.comment.begin"
+                    ],
+                    "settings": {
+                        "foreground": "#85b3f8",
+                        "fontStyle": "bold"
+                    }
+                },
+                {
+                    "scope": [
+                        "comment.block.documentation",
+                        "punctuation.definition.comment.begin.documentation",
+                        "punctuation.definition.comment.end.documentation"
+                    ],
+                    "settings": {
+                        "foreground": "#6bddb7",
+                        "fontStyle": "bold"
+                    }
+                },
+                {
+                    "scope": [
+                        "comment.line",
+                        "punctuation.definition.comment"
+                    ],
+                    "settings": {
+                        "foreground": "#FF0000",
+                        "fontStyle": "bold"
+                    }
+                }
+            ]
+        }
+    }
+}
