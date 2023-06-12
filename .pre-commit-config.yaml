@@ -1,0 +1,13 @@
+fail_fast: false
+repos:
+  - repo: https://github.com/stevencheng1220/pre-commit-hooks-forked
+    rev: 336fdd7c3cab698ead0b1c95157b9e74d3906b62
+    hooks:
+      - id: clang-format
+        args: [--style=Google]
+      - id: clang-tidy
+      # - id: oclint
+      # - id: uncrustify
+      - id: cppcheck
+      - id: cpplint
+      # - id: include-what-you-use
