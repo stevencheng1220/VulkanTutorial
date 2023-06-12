@@ -169,10 +169,20 @@ struct Vertex
     }
 };
 
+/*
+ * Positions and colors of the vertices that will be displayed
+ */
 const std::vector<Vertex> vertices = {
-    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
+
+/*
+    Reusing vertices using indices instead of creating more vertices
+*/
+const std::vector<uint16_t> indices = {
+    0, 1, 2, 2, 3, 0};
 
 /**
  * Main class
@@ -219,6 +229,8 @@ private:
 
     VkBuffer vertexBuffer;
     VkDeviceMemory vertexBufferMemory;
+    VkBuffer indexBuffer;
+    VkDeviceMemory indexBufferMemory;
 
     std::vector<VkCommandBuffer> commandBuffers;
 
@@ -275,6 +287,7 @@ private:
         createFramebuffers();
         createCommandPool();
         createVertexBuffer();
+        createIndexBuffer();
         createCommandBuffers();
         createSyncObjects();
     }
@@ -326,6 +339,9 @@ private:
         vkDestroyPipeline(device, graphicsPipeline, nullptr);
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
         vkDestroyRenderPass(device, renderPass, nullptr);
+
+        vkDestroyBuffer(device, indexBuffer, nullptr);
+        vkFreeMemory(device, indexBufferMemory, nullptr);
 
         vkDestroyBuffer(device, vertexBuffer, nullptr);
         vkFreeMemory(device, vertexBufferMemory, nullptr);
@@ -1082,6 +1098,42 @@ private:
     }
 
     /**
+     * Creates an index buffer for storing index data in Vulkan.
+     * The index buffer is created using a staging buffer and transfer operations.
+     *
+     * The method performs the following steps:
+     * 1. Calculates the required buffer size based on the index data size.
+     * 2. Creates a staging buffer in host-visible and host-coherent memory properties,
+     *    which allows for efficient data transfer from CPU to GPU.
+     * 3. Maps the staging buffer memory and copies the index data into it.
+     * 4. Unmaps the staging buffer memory.
+     * 5. Creates the final index buffer in device-local memory,
+     *    which provides optimal performance for GPU access.
+     * 6. Performs a buffer-to-buffer copy operation to transfer the data from the staging buffer to the index buffer.
+     * 7. Destroys the staging buffer and frees its associated memory.
+     */
+    void createIndexBuffer()
+    {
+        VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        void *data;
+        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, indices.data(), (size_t)bufferSize);
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
+
+        copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+    }
+
+    /**
      * Creates a Vulkan buffer with the specified size, usage, and memory properties.
      * The created buffer and its associated device memory are returned as output parameters.
      *
@@ -1094,7 +1146,7 @@ private:
     void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory)
     {
         /*
-         * Define class member to hold the buffer handle and call it vertexBuffer
+         * Define class member to hold the buffer handle
          */
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1104,7 +1156,7 @@ private:
 
         if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS)
         {
-            throw std::runtime_error("failed to create vertex buffer!");
+            throw std::runtime_error("failed to create buffer!");
         }
 
         /*
@@ -1300,10 +1352,12 @@ private:
         uint32_t bindingCount = 1;
         vkCmdBindVertexBuffers(commandBuffer, firstBinding, bindingCount, vertexBuffers, offsets);
 
-        uint32_t nonInstanceRenderingFlag = 1;
-        uint32_t firstVertexOffset = 0;
-        uint32_t firstInstanceOffset = 0;
-        vkCmdDraw(commandBuffer, static_cast<uint32_t>(vertices.size()), nonInstanceRenderingFlag, firstVertexOffset, firstInstanceOffset);
+        vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        uint32_t instanceCount = 1;
+        uint32_t firstIndex = 0;
+        uint32_t vertexOffset = 0;
+        uint32_t firstInstance = 0;
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), instanceCount, firstIndex, vertexOffset, firstInstance);
 
         vkCmdEndRenderPass(commandBuffer);
 
