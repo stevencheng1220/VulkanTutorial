@@ -1,26 +1,26 @@
-# name: Line Length Check
-# on: [push]
+name: Line Length Check
+on: [push]
 
-# jobs:
-#   check-line-length:
-#     runs-on: ubuntu-latest
+jobs:
+  check-line-length:
+    runs-on: ubuntu-latest
 
-#     steps:
-#     - name: Checkout code
-#       uses: actions/checkout@v2
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
 
-#     - name: Set up C++ build environment
-#       uses: actions/setup-cpp@v2
+    - name: Set up C++ build environment
+      uses: actions/setup-cpp@v2
 
-#     - name: Check line length
-#       run: |
-#         # Find all .cpp files in the commit
-#         FILES=$(git diff --name-only --diff-filter=ACMRTUXB ${{ github.event.before }} ${{ github.sha }} -- '*.cpp')
+    - name: Check line length
+      run: |
+        # Find all .cpp files in the commit
+        FILES=$(git diff --name-only --diff-filter=ACMRTUXB ${{ github.event.before }} ${{ github.sha }} -- '*.cpp')
 
-#         # Iterate over each file and check line length
-#         for FILE in $FILES; do
-#           if [[ $(awk 'length > 88' "$FILE") ]]; then
-#             echo "Line length exceeded 88 characters in file $FILE"
-#             exit 1
-#           fi
-#         done
+        # Iterate over each file and check line length
+        for FILE in $FILES; do
+          if [[ $(awk 'length > 88' "$FILE") ]]; then
+            echo "Line length exceeded 88 characters in file $FILE"
+            exit 1
+          fi
+        done
