@@ -1041,28 +1041,68 @@ private:
 
         if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS)
         {
-            throw std::runtime_error("failed to create command pool!");
+            throw std::runtime_error("failed to create graphics command pool!");
         }
     }
 
     /**
-     * Creates a vertex buffer, allocates memory, and fills it with vertex data.
-     * The method initializes a vertex buffer object using the provided vertex data and buffer properties.
-     * It determines the appropriate memory type for the buffer, allocates memory, and associates it with the buffer.
-     * The vertex data is then copied into the allocated memory for the vertex buffer.
+     * Creates a vertex buffer for storing vertex data in Vulkan.
+     * The vertex buffer is created using a staging buffer and transfer operations.
+     *
+     * The method performs the following steps:
+     * 1. Calculates the required buffer size based on the vertex data size.
+     * 2. Creates a staging buffer in host-visible and host-coherent memory properties,
+     *    which allows for efficient data transfer from CPU to GPU.
+     * 3. Maps the staging buffer memory and copies the vertex data into it.
+     * 4. Unmaps the staging buffer memory.
+     * 5. Creates the final vertex buffer in device-local memory,
+     *    which provides optimal performance for GPU access.
+     * 6. Performs a buffer-to-buffer copy operation to transfer the data from the staging buffer to the vertex buffer.
+     * 7. Destroys the staging buffer and frees its associated memory.
      */
     void createVertexBuffer()
+    {
+        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        void *data;
+        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, vertices.data(), (size_t)bufferSize);
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
+
+        copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+    }
+
+    /**
+     * Creates a Vulkan buffer with the specified size, usage, and memory properties.
+     * The created buffer and its associated device memory are returned as output parameters.
+     *
+     * @param size The size of the buffer in bytes.
+     * @param usage The usage flags specifying how the buffer will be used.
+     * @param properties The memory property flags defining the desired memory properties for the buffer.
+     * @param buffer Reference to a VkBuffer variable to store the created buffer handle.
+     * @param bufferMemory Reference to a VkDeviceMemory variable to store the allocated device memory for the buffer.
+     */
+    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory)
     {
         /*
          * Define class member to hold the buffer handle and call it vertexBuffer
          */
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = sizeof(vertices[0]) * vertices.size();
-        bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        bufferInfo.size = size;
+        bufferInfo.usage = usage;
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        if (vkCreateBuffer(device, &bufferInfo, nullptr, &vertexBuffer) != VK_SUCCESS)
+        if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to create vertex buffer!");
         }
@@ -1071,46 +1111,76 @@ private:
          * Determine the right memory type for the buffer and allocate memory
          */
         VkMemoryRequirements memRequirements;
-        vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements);
+        vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
 
         VkMemoryAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
 
-        if (vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory) != VK_SUCCESS)
+        if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS)
         {
-            throw std::runtime_error("failed to allocate vertex buffer memory!");
+            throw std::runtime_error("failed to allocate buffer memory!");
         }
 
         /*
          * Associate memory with the buffer, fill the vertex buffer, then
          * unmaps the memory allocated for the buffer.
          */
-        vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
-
-        void *data;
-        vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data);
-        memcpy(data, vertices.data(), (size_t)bufferInfo.size);
-        vkUnmapMemory(device, vertexBufferMemory);
+        vkBindBufferMemory(device, buffer, bufferMemory, 0);
     }
 
-    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory)
+    /**
+     * Copies data from the source buffer to the destination buffer using Vulkan commands.
+     *
+     * @param srcBuffer The source buffer from which data will be copied.
+     * @param dstBuffer The destination buffer where data will be copied to.
+     * @param size The size of the data to be copied in bytes.
+     */
+    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
     {
-        VkBufferCreateInfo bufferInfo{};
+        /*
+         * Allocate temporary command buffer for transfer
+         */
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = commandPool;
+        allocInfo.commandBufferCount = 1;
 
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = size;
-        bufferInfo.usage = usage;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        VkCommandBuffer commandBuffer;
+        vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
 
-        if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to create buffer!");
-        }
+        /*
+         * Start recording command buffer
+         */
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-        VkMemoryRequirements memRequirements;
-        vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
+        vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+        /*
+         * Contents of buffer are transferred
+         */
+        VkBufferCopy copyRegion{};
+        copyRegion.size = size;
+        vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+
+        vkEndCommandBuffer(commandBuffer);
+
+        /*
+         * Create queue info and execute the transfer on the buffers immediately
+         */
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+
+        vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(graphicsQueue);
+
+        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
     }
 
     /**
