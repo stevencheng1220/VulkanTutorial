@@ -172,22 +172,32 @@ struct Vertex
     }
 };
 
+/**
+ * Vulkan expects data in structures to be aligned in memory according to specific rules:
+ * - Scalars align by N (4 bytes for 32-bit floats).
+ * - vec2 aligns by 2N (8 bytes).
+ * - vec3/vec4 aligns by 4N (16 bytes).
+ * - Matrices (mat4) have the same alignment as vec4.
+ *
+ * If alignment requirements are not met, offsets may be incorrect, leading to issues.
+ * To enforce proper alignment, C++11 introduced the alignas specifier.
+ * It ensures offsets are multiples of 16, resolving alignment problems.
+ */
 struct UniformBufferObject
 {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
-}
+    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 proj;
+};
 
 /*
  * Positions and colors of the vertices that will be displayed
  */
-const std::vector<Vertex>
-    vertices = {
-        {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-        {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-        {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
+const std::vector<Vertex> vertices = {
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
 
 /*
     Reusing vertices using indices instead of creating more vertices
@@ -248,6 +258,9 @@ private:
     std::vector<VkDeviceMemory> uniformBuffersMemory;
     std::vector<void *> uniformBuffersMapped;
 
+    VkDescriptorPool descriptorPool;
+    std::vector<VkDescriptorSet> descriptorSets;
+
     std::vector<VkCommandBuffer> commandBuffers;
 
     std::vector<VkSemaphore> imageAvailableSemaphores;
@@ -306,6 +319,8 @@ private:
         createVertexBuffer();
         createIndexBuffer();
         createUniformBuffers();
+        createDescriptorPool();
+        createDescriptorSets();
         createCommandBuffers();
         createSyncObjects();
     }
@@ -364,6 +379,8 @@ private:
             vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
         }
 
+        vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+
         vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
         vkDestroyBuffer(device, indexBuffer, nullptr);
@@ -397,7 +414,15 @@ private:
     }
 
     /**
+     * This method is responsible for recreating the Vulkan swap chain when the window size changes or becomes zero.
+     * It waits for the window to have a non-zero size using `glfwGetFramebufferSize` and `glfwWaitEvents`.
+     * It then waits for the device to become idle using `vkDeviceWaitIdle`.
      *
+     * The method proceeds to clean up the existing swap chain resources using `cleanupSwapChain`.
+     * After that, it creates a new swap chain using `createSwapChain`, followed by creating image views with `createImageViews`.
+     * Finally, it creates the framebuffers using `createFramebuffers`.
+     *
+     * Note: It is essential to call this method whenever the window is resized or becomes zero to ensure a valid swap chain.
      */
     void recreateSwapChain()
     {
@@ -962,7 +987,7 @@ private:
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
         rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-        rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; /* change from clockwise to counterclockwise to avoid backface culling */
         rasterizer.depthBiasEnable = VK_FALSE;
 
         /*
@@ -1185,6 +1210,14 @@ private:
         vkFreeMemory(device, stagingBufferMemory, nullptr);
     }
 
+    /**
+     * This method creates uniform buffers for each frame in flight, based on the `MAX_FRAMES_IN_FLIGHT` constant.
+     * The buffer size is determined by the size of the `UniformBufferObject` structure.
+     * The method resizes the `uniformBuffers`, `uniformBuffersMemory`, and `uniformBuffersMapped` vectors to accommodate the buffers for each frame.
+     * It then iterates over each frame and calls the `createBuffer` function to create the uniform buffer,
+     * specifying the buffer size, usage flags, and memory properties.
+     * Finally, it maps the memory of each uniform buffer for host visibility and coherence.
+     */
     void createUniformBuffers()
     {
         VkDeviceSize bufferSize = sizeof(UniformBufferObject);
@@ -1198,6 +1231,76 @@ private:
             createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
 
             vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
+        }
+    }
+
+    /**
+     * This method creates a descriptor pool using the provided maximum number of frames in flight (`MAX_FRAMES_IN_FLIGHT`).
+     * It configures the descriptor pool size with a descriptor count of `MAX_FRAMES_IN_FLIGHT` for the uniform buffer type.
+     * The descriptor pool is created with the specified pool size and maximum number of sets.
+     */
+    void createDescriptorPool()
+    {
+        VkDescriptorPoolSize poolSize{};
+        poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes = &poolSize;
+        poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+        if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create descriptor pool!");
+        }
+    }
+
+    void createDescriptorSets()
+    {
+        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = descriptorPool;
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        allocInfo.pSetLayouts = layouts.data();
+
+        descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+        if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to allocate descriptor sets!");
+        }
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        {
+            VkDescriptorBufferInfo bufferInfo{};
+            bufferInfo.buffer = uniformBuffers[i];
+            bufferInfo.offset = 0;
+            bufferInfo.range = sizeof(UniformBufferObject);
+
+            /*
+             * The first two fields specify the descriptor set to update and the
+             * binding. We gave our uniform buffer binding index 0. Remember that
+             * descriptors can be arrays, so we also need to specify the first index
+             * in the array that we want to update. We're not using an array, so the
+             * index is simply 0.
+             */
+            VkWriteDescriptorSet descriptorWrite{};
+            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrite.dstSet = descriptorSets[i];
+            descriptorWrite.dstBinding = 0;
+            descriptorWrite.dstArrayElement = 0;
+            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrite.descriptorCount = 1;
+            descriptorWrite.pBufferInfo = &bufferInfo;
+
+            /*
+             * The updates are applied using vkUpdateDescriptorSets. It accepts two
+             * kinds of arrays as parameters: an array of VkWriteDescriptorSet and
+             * an array of VkCopyDescriptorSet
+             */
+            vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
         }
     }
 
@@ -1421,6 +1524,9 @@ private:
         vkCmdBindVertexBuffers(commandBuffer, firstBinding, bindingCount, vertexBuffers, offsets);
 
         vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+
         uint32_t instanceCount = 1;
         uint32_t firstIndex = 0;
         uint32_t vertexOffset = 0;
@@ -1561,6 +1667,8 @@ private:
         {
             throw std::runtime_error("failed to acquire swap chain image!");
         }
+
+        updateUniformBuffer(currentFrame);
 
         vkResetFences(device, 1, &inFlightFences[currentFrame]);
 

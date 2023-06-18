@@ -489,6 +489,17 @@
 
 # Uniform buffers
 
+This table provides a concise summary of the four terms (Descriptor Layout, Descriptor Buffer, Descriptor Pool, and Descriptor Set) along with their descriptions, examples, and usage information.
+
+| Term              | Description                                                                                      | Examples                                            | Usage                                                |
+|-------------------|--------------------------------------------------------------------------------------------------|-----------------------------------------------------|------------------------------------------------------|
+| Descriptor Layout | Defines the types and configurations of resources (buffers or images) that can be accessed by a shader. Specifies the binding points and the types of resources (uniform buffers, storage buffers, sampled images, etc.) expected by a shader. Describes the structure and organization of the descriptors used by a shader.  | Uniform buffers, sampled images, storage buffers     | Specifies binding points and resource expectations.  |
+| Descriptor Buffer | Refers to a specific type of resource, namely a buffer. Represents a region of memory used to store data. Associated with a specific binding point in the descriptor layout and provides the actual data for the associated shader resource.                                                                                                   | Uniform buffer for MVP matrix, storage buffer for SSBO | Provides actual data for the associated resource.    |
+| Descriptor Pool   | A Vulkan object used to allocate and manage descriptor sets. Defines the maximum number of descriptor sets that can be allocated from it. Specifies the number of individual descriptors (uniform buffers, images) of each type that can be used within those descriptor sets. Manages the memory resources required for descriptor sets.                                                                               | Maximum number of descriptor sets, descriptor counts | Manages memory resources for descriptor sets.        |
+| Descriptor Set    | An allocated set of descriptors that represent the bindings of resources for a specific shader invocation. Created from a descriptor pool and bound to a specific descriptor layout. Provides the handles to the actual resources (buffers, images) that will be used by a shader during rendering. Each descriptor in the set corresponds to a resource (buffer, image) defined in the descriptor layout.                                                                                 | Set for vertex shader, set for fragment shader        | Contains handles to resources used by the shader.    |
+
+<br></br>
+
 ## Descriptor layout and buffer
 - Introduction
     - A descriptor is a way for shaders to freely access resources like buffers and images.
