@@ -489,21 +489,59 @@
 
 # Uniform buffers
 
+This table provides a concise summary of the four terms (Descriptor Layout, Descriptor Buffer, Descriptor Pool, and Descriptor Set) along with their descriptions, examples, and usage information.
+
+| Term              | Description                                                                                      | Examples                                            | Usage                                                |
+|-------------------|--------------------------------------------------------------------------------------------------|-----------------------------------------------------|------------------------------------------------------|
+| Descriptor Layout | Defines the types and configurations of resources (buffers or images) that can be accessed by a shader. Specifies the binding points and the types of resources (uniform buffers, storage buffers, sampled images, etc.) expected by a shader. Describes the structure and organization of the descriptors used by a shader.  | Uniform buffers, sampled images, storage buffers     | Specifies binding points and resource expectations.  |
+| Descriptor Buffer | Refers to a specific type of resource, namely a buffer. Represents a region of memory used to store data. Associated with a specific binding point in the descriptor layout and provides the actual data for the associated shader resource.                                                                                                   | Uniform buffer for MVP matrix, storage buffer for SSBO | Provides actual data for the associated resource.    |
+| Descriptor Pool   | A Vulkan object used to allocate and manage descriptor sets. Defines the maximum number of descriptor sets that can be allocated from it. Specifies the number of individual descriptors (uniform buffers, images) of each type that can be used within those descriptor sets. Manages the memory resources required for descriptor sets.                                                                               | Maximum number of descriptor sets, descriptor counts | Manages memory resources for descriptor sets.        |
+| Descriptor Set    | An allocated set of descriptors that represent the bindings of resources for a specific shader invocation. Created from a descriptor pool and bound to a specific descriptor layout. Provides the handles to the actual resources (buffers, images) that will be used by a shader during rendering. Each descriptor in the set corresponds to a resource (buffer, image) defined in the descriptor layout.                                                                                 | Set for vertex shader, set for fragment shader        | Contains handles to resources used by the shader.    |
+
+<br></br>
+
 ## Descriptor layout and buffer
 - Introduction
+    - A descriptor is a way for shaders to freely access resources like buffers and images.
+    - We need to set up a buffer that contains the transformation matrices and have the vertex shader access them through a descriptor. Usage of descriptors consists of three parts:
+        - Specify a descriptor layout during pipeline creation
+        - Allocate a descriptor set from a descriptor pool
+        - Bind the descriptor set during rendering
+    - The descriptor layout specifies the types of resources that are going to be accessed by the pipeline, justs like a render pass specifies the types of attachments that will be accessed.
+    - A descriptor set specifies the actual buffer or image resources that will be bound to the descriptors, just like a framebuffer specifies the actual image views to bind to render pass attachments. 
 - Vertex shader
+    - Implementation details (skip)
 - Descriptor set layout
+    - The descriptor set layout is defined to specify the Uniform Buffer Object (UBO) in the vertex shader. The UBO is defined in C++ using a struct that matches the shader's data types. 
+    - The descriptor set layout is created using the VkDescriptorSetLayoutBinding struct, which describes the binding used in the shader, the descriptor type (uniform buffer in this case), and the number of values in the array. 
+    - The descriptor set layout is then combined with other bindings into a single VkDescriptorSetLayout object. During pipeline creation, the descriptor set layout is specified in the pipeline layout object.
 - Uniform buffer
+    - Uniform buffers are used to store data for shaders, and in this case, the Uniform Buffer Object (UBO) data. 
+    - Multiple uniform buffers are used to handle frames in flight, ensuring that the buffer being updated is not read by the GPU. 
+    - We map the buffer right after creation using vkMapMemory to get a pointer to which we can write the data later on. The buffer stays mapped to this pointer for the application's whole lifetime.
+    - This technique is called "persistent mapping" and works on all Vulkan implementations. Not having to map the buffer every time we need to update it increases performances, as mapping is not free.
 - Updating uniform data
+    - Updating uniform data involves creating a function that generates transformations for each frame. It calculates the time elapsed since rendering started using the chrono library and sets up model, view, and projection transformations in the UniformBufferObject (UBO). 
+    - These transformations include rotating the model around the Z-axis based on time, defining the view transformation to look at the geometry from above, and setting up a perspective projection with the appropriate parameters. The data in the UBO is then copied to the current uniform buffer using memcpy. 
+    - It's worth noting that using push constants instead of UBOs can be more efficient for frequently changing values.
 <br></br>
 
 ## Descriptor pool and sets
 - Introduction
+    - The descriptor layout from the previous chapter describes the type of descriptors that can be bound. In this chapter we're going to create a descriptor set for each VkBuffer resource to bind it to the uniform buffer descriptor.
 - Descriptor pool
+    - A descriptor pool is used to allocate descriptor sets, which are containers for descriptor bindings. The descriptor pool is set up to hold uniform buffer descriptors, with one descriptor allocated for each frame in flight. The maximum number of descriptor sets that can be allocated is also specified. The resulting descriptor pool handle is stored as a class member for later use.
 - Descriptor set
+    - Descriptor sets are allocated from a descriptor pool and need to be configured with the appropriate descriptors. Each descriptor set is configured with descriptors using VkWriteDescriptorSet structs. In this case, the descriptors refer to uniform buffer objects, which are configured with VkDescriptorBufferInfo containing information about the buffer and the region within it.
 - Using descriptor sets
+    - The vkCmdBindDescriptorSets function is used to bind the descriptor sets before the vkCmdDrawIndexed call. Descriptor sets are not specific to graphics pipelines, so it is necessary to specify whether they are bound to the graphics or compute pipeline. 
+    - The layout of the descriptors, the index of the first descriptor set, the number of sets to bind, and the array of sets to bind are also specified. 
+    - Additionally, to address a visibility issue caused by Y-flipping in the projection matrix, the front face of the rasterizer is modified to ensure the vertices are drawn in the correct order.
 - Alignment requirements
+    - In Vulkan, alignment requirements play a crucial role when matching the data in a C++ structure with the uniform definition in a shader. Scalars, vectors, and matrices have specific alignment requirements, such as being aligned by multiples of 4 or 16 bytes. Failure to adhere to these alignment requirements can result in incorrect offsets and unexpected behavior. 
+    - To ensure proper alignment, the alignas specifier can be used in C++ code. Additionally, the GLM library provides an option to enforce default aligned types to handle alignment automatically. However, when using nested structures, explicit alignment specification may be required to avoid alignment errors.
 - Multiple descriptor sets
+    - Implementation details (skip)
 <br></br>
 
 # Texture mapping
