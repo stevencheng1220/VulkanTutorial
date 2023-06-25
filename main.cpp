@@ -135,6 +135,7 @@ struct Vertex
 {
     glm::vec2 pos;
     glm::vec3 color;
+    glm::vec2 texCoord;
 
     /**
      * Retrieves the vertex input binding description.
@@ -153,13 +154,18 @@ struct Vertex
     }
 
     /**
-     * Retrieves the vertex input attribute descriptions.
+     * This static method returns an array of VkVertexInputAttributeDescription
+     * structures representing the attribute descriptions for the vertex input. The
+     * array contains three elements, each describing a specific vertex attribute.
+     * The attribute descriptions specify the binding, location, format, and offset
+     * of each attribute in the vertex data.
      *
-     * @return std::array<VkVertexInputAttributeDescription, 2> - An array of vertex input attribute descriptions. The attribute descriptions specify the binding, location, format, and offset for each attribute in the vertex data.
+     * @return std::array<VkVertexInputAttributeDescription, 3> An array of VkVertexInputAttributeDescription structures
+     *         representing the attribute descriptions for the vertex input.
      */
-    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions()
+    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions()
     {
-        std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
 
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
@@ -170,6 +176,11 @@ struct Vertex
         attributeDescriptions[1].location = 1;
         attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+        attributeDescriptions[2].binding = 0;
+        attributeDescriptions[2].location = 2;
+        attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
 
         return attributeDescriptions;
     }
@@ -197,10 +208,10 @@ struct UniformBufferObject
  * Positions and colors of the vertices that will be displayed
  */
 const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}};
 
 /*
     Reusing vertices using indices instead of creating more vertices
@@ -254,6 +265,8 @@ private:
 
     VkImage textureImage;
     VkDeviceMemory textureImageMemory;
+    VkImageView textureImageView;
+    VkSampler textureSampler;
 
     VkBuffer vertexBuffer;
     VkDeviceMemory vertexBufferMemory;
@@ -323,6 +336,8 @@ private:
         createFramebuffers();
         createCommandPool();
         createTextureImage();
+        createTextureImageView();
+        createTextureSampler();
         createVertexBuffer();
         createIndexBuffer();
         createUniformBuffers();
@@ -387,6 +402,9 @@ private:
         }
 
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+
+        vkDestroySampler(device, textureSampler, nullptr);
+        vkDestroyImageView(device, textureImageView, nullptr);
 
         vkDestroyImage(device, textureImage, nullptr);
         vkFreeMemory(device, textureImageMemory, nullptr);
@@ -646,6 +664,7 @@ private:
         }
 
         VkPhysicalDeviceFeatures deviceFeatures{};
+        deviceFeatures.samplerAnisotropy = VK_TRUE; /* turn on anisotropy mode */
 
         /*
          * Logical device info struct
@@ -788,41 +807,7 @@ private:
 
         for (size_t i = 0; i < swapChainImages.size(); i++)
         {
-            VkImageViewCreateInfo createInfo{};
-            createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-            createInfo.image = swapChainImages[i];
-
-            /*
-             * The viewType and format fields specify how the image data should be interpreted. The viewType
-             * parameter allows you to treat images as 1D textures, 2D textures, 3D textures and cube maps.
-             */
-            createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-            createInfo.format = swapChainImageFormat;
-
-            /*
-             * The components field allows you to swizzle the color channels around. For example, you can map all of
-             * the channels to the red channel for a monochrome texture. You can also map constant values of 0 and 1
-             * to a channel. In our case we'll stick to the default mapping.
-             */
-            createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-            createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-            createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-            createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-
-            /*
-             * The subresourceRange field describes what the image's purpose is and which part of the image should be
-             * accessed. Our images will be used as color targets without any mipmapping levels or multiple layers.
-             */
-            createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            createInfo.subresourceRange.baseMipLevel = 0;
-            createInfo.subresourceRange.levelCount = 1;
-            createInfo.subresourceRange.baseArrayLayer = 0;
-            createInfo.subresourceRange.layerCount = 1;
-
-            if (vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS)
-            {
-                throw std::runtime_error("failed to create image views!");
-            }
+            swapChainImageViews[i] = createImageView(swapChainImages[i], swapChainImageFormat);
         }
     }
 
@@ -911,12 +896,30 @@ private:
         uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
         /*
-         * specify the descriptor set layout during pipeline creation to tell Vulkan which descriptors the shaders will be using.
+         * Create a descriptor set layout binding for a sampler. Set the binding
+         * index to 1, indicating the position of the sampler in the descriptor set
+         * layout. Specify a descriptor count of 1, as there is only one sampler. Set
+         * the descriptor type to VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+         * indicating that it is a combined image sampler descriptor. Since no
+         * immutable samplers are used, the pImmutableSamplers parameter is set to
+         * nullptr. Finally, specify VK_SHADER_STAGE_FRAGMENT_BIT as the stage flags
+         * to indicate that the binding is accessible in the fragment shader.
          */
+        VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+        samplerLayoutBinding.binding = 1;
+        samplerLayoutBinding.descriptorCount = 1;
+        samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        samplerLayoutBinding.pImmutableSamplers = nullptr;
+        samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        /*
+         * Specify the descriptor set layout during pipeline creation to tell Vulkan which descriptors the shaders will be using.
+         */
+        std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboLayoutBinding, samplerLayoutBinding};
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &uboLayoutBinding;
+        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+        layoutInfo.pBindings = bindings.data();
 
         if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
         {
@@ -1164,7 +1167,7 @@ private:
          * values.
          */
         int texWidth, texHeight, texChannels;
-        stbi_uc *pixels = stbi_load("textures/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        stbi_uc *pixels = stbi_load("/Users/stevencheng/CLionProjects/VulkanTutorial/textures/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 
         /*
          * The pixels are laid out row by row with 4 bytes per pixel in the case of
@@ -1213,6 +1216,126 @@ private:
 
         vkDestroyBuffer(device, stagingBuffer, nullptr);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
+    }
+
+    /**
+     * Create a Texture Image View object
+     */
+    void createTextureImageView()
+    {
+        textureImageView = createImageView(textureImage, VK_FORMAT_R8G8B8A8_SRGB);
+    }
+
+    /**
+     * This function retrieves the properties of the physical device and configures
+     * the sampler creation info to create a texture sampler with specific settings.
+     * The sampler allows for linear filtering, repeats the texture when going
+     * beyond image dimensions, enables anisotropic filtering, sets the border color
+     * for addressing modes, uses normalized texture coordinates within [0, 1) range
+     * on all axes, disables texture comparison, sets mipmap filtering mode to linear, and creates the texture sampler object.
+     */
+    void createTextureSampler()
+    {
+        /* Retrieve properties of the physical device */
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+
+        /* Configure sampler creation info */
+        VkSamplerCreateInfo samplerInfo{};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+
+        /* Repeat texture when going beyond image dimensions */
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
+        /*
+         * maxAnisotropy field limits amount of texel samples that can be
+         * used to calculate final color.
+         * We want maximum quality.
+         */
+        samplerInfo.anisotropyEnable = VK_TRUE;
+        samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+
+        /*
+         * Specifies which color is returned when sampling beyond image with
+         * clamp to border addressing mode
+         */
+        samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+
+        /* We will use texels within [0, 1) range on all axes */
+        samplerInfo.unnormalizedCoordinates = VK_FALSE;
+
+        /* Used in texel filtering operations */
+        samplerInfo.compareEnable = VK_FALSE;
+        samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+
+        /* Mipmap variables */
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+
+        if (vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create texture sampler!");
+        }
+    }
+
+    /**
+     * This function creates a Vulkan image view that allows accessing a specific
+     * subresource of an image, such as a single layer or mip level. The image view
+     * is created using the vkCreateImageView function, providing the image and
+     * format as input. The viewType field in the VkImageViewCreateInfo structure
+     * specifies the interpretation of the image data, allowing for different types
+     * such as 1D textures, 2D textures, 3D textures, and cube maps.
+     *
+     * The subresourceRange field describes the purpose and accessibility of the
+     * image. In this case, the image view is used as a color target without
+     * mipmapping levels or multiple layers. The aspectMask is set to
+     * VK_IMAGE_ASPECT_COLOR_BIT to indicate that the image contains color data. The
+     * baseMipLevel and levelCount fields specify the mip levels to be accessed,
+     * where baseMipLevel is set to 0 and levelCount is set to 1 for a single mip
+     * level. The baseArrayLayer and layerCount fields indicate the layers to be
+     * accessed, with baseArrayLayer set to 0 and layerCount set to 1 for a single
+     * layer.
+     *
+     * If the creation of the image view fails, a std::runtime_error exception is
+     * thrown.
+     *
+     * @param image The Vulkan image to create the view for.
+     * @param format The format of the image.
+     * @return The created Vulkan image view.
+     */
+    VkImageView createImageView(VkImage image, VkFormat format)
+    {
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = image;
+
+        /*
+         * The viewType and format fields specify how the image data should be interpreted. The viewType
+         * parameter allows you to treat images as 1D textures, 2D textures, 3D textures and cube maps.
+         */
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = format;
+
+        /*
+         * The subresourceRange field describes what the image's purpose is and which part of the image should be
+         * accessed. Our images will be used as color targets without any mipmapping levels or multiple layers.
+         */
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        viewInfo.subresourceRange.baseMipLevel = 0;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = 0;
+        viewInfo.subresourceRange.layerCount = 1;
+
+        VkImageView imageView;
+        if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create texture image view!");
+        }
+
+        return imageView;
     }
 
     /**
@@ -1497,14 +1620,20 @@ private:
      */
     void createDescriptorPool()
     {
-        VkDescriptorPoolSize poolSize{};
-        poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        /*
+         * Create larger descriptor pool to make room for allocation of combined
+         * image sampler.
+         */
+        std::array<VkDescriptorPoolSize, 2> poolSizes{};
+        poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.poolSizeCount = 1;
-        poolInfo.pPoolSizes = &poolSize;
+        poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+        poolInfo.pPoolSizes = poolSizes.data();
         poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
         if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
@@ -1536,27 +1665,53 @@ private:
             bufferInfo.range = sizeof(UniformBufferObject);
 
             /*
-             * The first two fields specify the descriptor set to update and the
-             * binding. We gave our uniform buffer binding index 0. Remember that
-             * descriptors can be arrays, so we also need to specify the first index
-             * in the array that we want to update. We're not using an array, so the
-             * index is simply 0.
+             * Initialize combined image sampler structure
              */
-            VkWriteDescriptorSet descriptorWrite{};
-            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrite.dstSet = descriptorSets[i];
-            descriptorWrite.dstBinding = 0;
-            descriptorWrite.dstArrayElement = 0;
-            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            descriptorWrite.descriptorCount = 1;
-            descriptorWrite.pBufferInfo = &bufferInfo;
+            VkDescriptorImageInfo imageInfo{};
+            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            imageInfo.imageView = textureImageView;
+            imageInfo.sampler = textureSampler;
+
+            std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+
+            /* Set up descriptor writes for a uniform buffer descriptor:
+               - Assign the destination descriptor set (dstSet) to the descriptor set at index 'i'.
+               - Set the binding index (dstBinding) as 0, representing the position of the descriptor within the descriptor set.
+               - Specify the starting element (dstArrayElement) as 0 since we are not using an array of descriptors.
+               - Set the descriptor type (descriptorType) as VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER to indicate a uniform buffer descriptor.
+               - Indicate the number of descriptors to update (descriptorCount) as 1.
+               - Point the pBufferInfo field to the buffer information structure (&bufferInfo).
+            */
+            descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[0].dstSet = descriptorSets[i];
+            descriptorWrites[0].dstBinding = 0;
+            descriptorWrites[0].dstArrayElement = 0;
+            descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrites[0].descriptorCount = 1;
+            descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+            /* Set up descriptor writes for a combined image sampler descriptor:
+                - Define the structure type (sType) as VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET for versioning purposes.
+                - Assign the destination descriptor set (dstSet) to the descriptor set at index 'i'.
+                - Set the binding index (dstBinding) as 1, indicating the position of the descriptor within the descriptor set.
+                - Specify the starting element (dstArrayElement) as 0 since we are not using an array of descriptors.
+                - Set the descriptor type (descriptorType) as VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER for a combined image sampler descriptor.
+                - Indicate the number of descriptors to update (descriptorCount) as 1.
+                - Point the pImageInfo field to the image information structure (&imageInfo).
+            */
+
+            descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[1].dstSet = descriptorSets[i];
+            descriptorWrites[1].dstBinding = 1;
+            descriptorWrites[1].dstArrayElement = 0;
+            descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            descriptorWrites[1].descriptorCount = 1;
+            descriptorWrites[1].pImageInfo = &imageInfo;
 
             /*
-             * The updates are applied using vkUpdateDescriptorSets. It accepts two
-             * kinds of arrays as parameters: an array of VkWriteDescriptorSet and
-             * an array of VkCopyDescriptorSet
+             * The updates are applied using vkUpdateDescriptorSets.
              */
-            vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+            vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
         }
     }
 
@@ -2179,7 +2334,10 @@ private:
             swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
         }
 
-        return indices.isComplete() && extensionsSupported && swapChainAdequate;
+        VkPhysicalDeviceFeatures supportedFeatures;
+        vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
+
+        return indices.isComplete() && extensionsSupported && swapChainAdequate && supportedFeatures.samplerAnisotropy;
     }
 
     /**
