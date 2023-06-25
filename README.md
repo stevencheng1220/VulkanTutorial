@@ -497,7 +497,6 @@ This table provides a concise summary of the four terms (Descriptor Layout, Desc
 | Descriptor Buffer | Refers to a specific type of resource, namely a buffer. Represents a region of memory used to store data. Associated with a specific binding point in the descriptor layout and provides the actual data for the associated shader resource.                                                                                                   | Uniform buffer for MVP matrix, storage buffer for SSBO | Provides actual data for the associated resource.    |
 | Descriptor Pool   | A Vulkan object used to allocate and manage descriptor sets. Defines the maximum number of descriptor sets that can be allocated from it. Specifies the number of individual descriptors (uniform buffers, images) of each type that can be used within those descriptor sets. Manages the memory resources required for descriptor sets.                                                                               | Maximum number of descriptor sets, descriptor counts | Manages memory resources for descriptor sets.        |
 | Descriptor Set    | An allocated set of descriptors that represent the bindings of resources for a specific shader invocation. Created from a descriptor pool and bound to a specific descriptor layout. Provides the handles to the actual resources (buffers, images) that will be used by a shader during rendering. Each descriptor in the set corresponds to a resource (buffer, image) defined in the descriptor layout.                                                                                 | Set for vertex shader, set for fragment shader        | Contains handles to resources used by the shader.    |
-
 <br></br>
 
 ## Descriptor layout and buffer
@@ -548,28 +547,94 @@ This table provides a concise summary of the four terms (Descriptor Layout, Desc
 
 ## Images
 - Introduction
-- Imagae library
+    - Adding a texture map to the application will involve the following steps:
+        - Create an image object backed by device memory.
+        - Fill it with pixels from an image file.
+        - Create an image sampler.
+        - Add a combined image sampler descriptor to sample colors from the texture.
+    - To create an image object manually involves creating a staging resource and filling it with pixel data, which is then copied to the final image object used for rendering.
+    - Images can have different layouts that affect how the pixels are organized in memory. Due to the way graphics hardware works, simply storing the pixel row by row may not lead to the best performance.
+        - When performing any operation on images, must make sure that they have the layout that is optimal for use in that operation.
+        - Some of these layouts include:
+            - VK_IMAGE_LAYOUT_PRESENT_SRC_KHR: Optimal for presentation
+            - VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL: Optimal as attachment for writing colors from the fragment shader
+            - VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL: Optimal as source in a transfer operation, like vkCmdCopyImageToBuffer
+            - VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL: Optimal as destination in a transfer operation, like vkCmdCopyBufferToImage
+            - VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL: Optimal for sampling from a shader
+    - A common way to transition the layout of an image is a pipeline barrier. Pipeline barrier are primarily used for synchronizing access to resources, like making sure that an image was written to before it is read, but they can also be used to transition layouts.
+- Image library
+    - In Vulkan, there are various libraries that can be used for loading images, and it is also possible to write custom code for simpler formats like BMP and PPM. 
+    - In this tutorial, the stb_image library from the stb collection will be used. The advantage of this library is that all the necessary code is contained in a single file, eliminating the need for complex build configurations.
 - Loading an image
+    - Implementation details (skip)
 - Staging buffer
+    - In Vulkan, a staging buffer is created in host visible memory to facilitate the transfer of pixel data. The staging buffer is used as a temporary storage for the pixels before they are copied to an image. The buffer is created with properties that allow it to be mapped for direct memory access and used as a transfer source. 
+    - The pixel values obtained from an image loading library are copied to the staging buffer by mapping the buffer's memory, performing a memory copy operation, and then unmapping the memory. Finally, the original pixel array is freed to clean up resources.
 - Texture Image
+    - Texture image facilitates efficient retrieval of pixel values. Texture images provide a better alternative to accessing pixel values directly from a buffer. 
+    - The image is created using a VkImageCreateInfo struct, specifying its type (2D), dimensions, and other properties. The tiling mode is set to optimal for efficient access from the shader. The initial layout is undefined since we'll be transitioning the image later. The image is used as a transfer destination and sampled in the shader. 
+    - Memory for the image is allocated using vkAllocateMemory and bound to the image using vkBindImageMemory.
 - Layout transitions
+    - Layout transitions are necessary when modifying the layout of an image, such as transitioning from one layout to another. A layout transition involves recording and executing a command buffer.
+    - To perform a layout transition, we need to use an image memory barrier to synchronize access to the image and specify the transition between old and new layouts.
+    - The image memory barrier contains information such as the old and new layouts, queue family indices (if transferring ownership), and the affected image and subresource range.
+    - The vkCmdPipelineBarrier function is used to submit the pipeline barrier within the command buffer.
 - Copying buffer to image
+    - The process of copying a buffer to an image involves specifying the source buffer and destination image, as well as defining the regions within them that will be copied. The copying is done using the vkCmdCopyBufferToImage function.
+    - The copying operation requires the use of VkBufferImageCopy structs, which provide information about the specific regions to be copied within the buffer and image. The fields of this struct include bufferOffset (byte offset in the buffer where pixel values start), bufferRowLength, and bufferImageHeight (specifying the layout of pixels in memory). The imageSubresource, imageOffset, and imageExtent fields define the destination region within the image.
 - Preparing the texture image
+    - In Vulkan, preparing a texture image involves transitioning its layout to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL and executing a buffer to image copy operation. 
+    - First, the texture image is transitioned from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL. 
+    - Then, the staging buffer is copied to the texture image. Finally, the texture image is transitioned to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL to enable shader access for sampling. 
+    - These transitions and copy operations ensure the texture image is properly prepared for use in the shader during rendering.
 - Transition barrier masks
+    - If you run your current application with validation layers, then you'll see that it complains about the access masks and pipeline stages being invaid. We still need to set those based on the layouts in the transition. There are two transitions we need to handle.
+        - Undefined - > transfer destination: transfer writes that don't need to wait on anything.
+        - Transfer destination -> shader reading: shader reads should wait on transfer writes, specifically the shader reads in the fragment shader, because that's where we're going to use the texture.
+    -  Transitioning image layouts involves specifying access masks and pipeline stages to ensure proper synchronization and ordering of operations. The barriers and command buffer operations are set up based on the old and new layouts. The transitions occur in the transfer and fragment shader pipeline stages for write and read operations, respectively. 
+    - The use of VK_ACCESS_HOST_WRITE_BIT and VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT is optional but can be utilized for explicit synchronization. The VK_IMAGE_LAYOUT_GENERAL layout offers flexibility but may not provide optimal performance. 
+    - For improved throughput, it is recommended to combine operations in a single asynchronous command buffer.
+        - By combining multiple operations into a single command buffer, you reduce the overhead of command buffer management and submission. When multiple commands are grouped together, Vulkan can optimize the execution of these commands, potentially parallelizing or batching them for better performance.
 - Cleanup
+    - Implementation details (skip)
 <br></br>
 
 ## Image view and sampler
 - Texture image view
+    - We need to create an image view for the texture image. We set up the VkImageViewCreateInfo structure with the appropriate parameters, including the format and image, then we call vkCreateImageView to create the image view for the texture image.
 - Samplers
+    - Textures are usually accessed through samplers, which will apply filtering and transformations to compute the final color that is retrieved.
+    - These filters are helpful to deal with problems like oversampling. Consider a texture that is mapped to geometry with more fragments than texels. If you simply took the closest texel for the texture coordinate in each fragment, then you would get a result like the first image:
+![Alt text](README_Media/texture_filtering.png)
+        - If you combined the 4 closest texels through linear interpolation, then you would get a smoother result like the one on the right.
+    - Undersampling is the opposite problem, where you have more texels than fragments. This will lead to artifacts when sampling high frequency patterns like a checkerboard texture at a sharp angle:
+![Alt text](README_Media/anisotropic_filtering.png)
+        - As shown above, the texture in the left turns into a blurry mess in the distance. The solution to this is anisotropic filtering, which improves the quality of textures when viewed at oblique angles, reducing distortion and enhancing the level of detail in textured surfaces.
+    - Aside from these filters, a sampler can also take care of transformations. It determines what happens when you try to read texels outside the image through its addressing mode. The image below displays some of the possibilities:
+![Alt text](README_Media/texture_addressing.png)
+    - To set up a texture sampler, we need to set up a sampler object to read colors from the texture image in the shader.
+        - The sampler configuration is specified through a VkSamplerCreateInfo structure, including filter modes for magnification and minification, address modes for handling texture coordinates outside the image dimensions, anisotropic filtering enablement, maximum anisotropy value, border color, coordinate system normalization, comparison function, mipmapping options, and more.
+        - The sampler is created using vkCreateSampler and stored as a class member. During cleanup, the sampler is destroyed using vkDestroySampler along with the texture image view.
 - Anisotropy device feature
+    - Implementation details (skip)
 <br></br>
 
 ## Combined image sampler
 - Introduction
+    - The combined image sampler is a type of descriptor that makes it possible for shaders to access an image resource through a sampler object.
 - Updating the descriptors
+    - In order to use a combined image sampler descriptor in Vulkan, several steps need to be taken. First, the descriptor set layout needs to be updated to include a binding for the combined image sampler descriptor. This is done by adding a VkDescriptorSetLayoutBinding with the appropriate settings, indicating that it will be used in the fragment shader.
+    - Next, a larger descriptor pool must be created to accommodate the allocation of the combined image sampler descriptor. This is achieved by modifying the VkDescriptorPoolCreateInfo to include a VkDescriptorPoolSize for this descriptor type.
+    - Finally, the actual image and sampler resources need to be bound to the descriptors in the descriptor set. This is done by specifying the resources in a VkDescriptorImageInfo struct and updating the descriptor sets using vkUpdateDescriptorSets.
 - Texture coordinates
+    - To enable texture mapping, the texture coordinates for each vertex need to be defined.
+    - This involves modifying the Vertex struct to include a vec2 for texture coordinates and adding a VkVertexInputAttributeDescription to access the texture coordinates as input in the vertex shader. These modifications allow passing the texture coordinates to the fragment shader for interpolation across the surface of the square. 
+    - In this tutorial, the square is filled with a texture using coordinates ranging from (0, 0) in the top-left corner to (1, 1) in the bottom-right corner.
 - Shaders
+    - In order to sample colors from a texture in Vulkan, modifications need to be made to the vertex and fragment shaders.
+    - The vertex shader is modified to pass the texture coordinates from the vertex shader to the fragment shader.
+    - The fragment shader is updated to include a reference to a sampler uniform, which represents the combined image sampler descriptor. 
+    - The texture is then sampled using the built-in texture function, and the resulting color is outputted. 
 <br></br>
 
 # Depth buffering
