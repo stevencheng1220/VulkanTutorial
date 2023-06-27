@@ -639,7 +639,13 @@ This table provides a concise summary of the four terms (Descriptor Layout, Desc
 
 # Depth buffering
 - Introduction
+    - The geometry we've worked with so far is projected into 3D, but it's still completely flat. In this chapter we're going to add a Z coordinate to the position to prepare for 3D meshes. We'll use this third coordinate to place a square over the current square to see a problem that arises when geometry is not sorted by depth.
 - 3D geometry
+    - To support 3D geometry, we need to modify the Vertex struct. The vertex structure now includes a 3D vector for position, and the corresponding attribute description is updated. The vertex shader is updated to accept and transform 3D coordinates. The vertex container now includes Z coordinates for additional geometry. 
+    - The problem of overlapping fragments is addressed by either sorting draw calls by depth or using a depth buffer.
+        -  The first approach is commonly used for drawing transparent objects, because order-independent transparency is a difficult challenge to solve. However, the problem of ordering fragments by depth is much more commonly solved using a depth buffer. 
+        - A depth buffer is an additional attachment that stores the depth for every position, just like the color attachment stores the color of every position. Every time the rasterizer produces a fragment, the depth test will check if the new fragment is closer than the previous one. If it isn't, then the new fragment is discarded. 
+        - A fragment that passes the depth test writes its own depth to the depth buffer. It is possible to manipulate this value from the fragment shader, just like you can manipulate the color output.
 - Depth image and view
 - Explicitly transitioning the depth image
 - Render pass
