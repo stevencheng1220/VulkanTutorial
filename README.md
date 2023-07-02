@@ -644,15 +644,34 @@ This table provides a concise summary of the four terms (Descriptor Layout, Desc
     - To support 3D geometry, we need to modify the Vertex struct. The vertex structure now includes a 3D vector for position, and the corresponding attribute description is updated. The vertex shader is updated to accept and transform 3D coordinates. The vertex container now includes Z coordinates for additional geometry. 
     - The problem of overlapping fragments is addressed by either sorting draw calls by depth or using a depth buffer.
         -  The first approach is commonly used for drawing transparent objects, because order-independent transparency is a difficult challenge to solve. However, the problem of ordering fragments by depth is much more commonly solved using a depth buffer. 
-        - A depth buffer is an additional attachment that stores the depth for every position, just like the color attachment stores the color of every position. Every time the rasterizer produces a fragment, the depth test will check if the new fragment is closer than the previous one. If it isn't, then the new fragment is discarded. 
+        - The second approach uses a depth buffer, which is an additional attachment that stores the depth for every position, just like the color attachment stores the color of every position. Every time the rasterizer produces a fragment, the depth test will check if the new fragment is closer than the previous one. If it isn't, then the new fragment is discarded. 
         - A fragment that passes the depth test writes its own depth to the depth buffer. It is possible to manipulate this value from the fragment shader, just like you can manipulate the color output.
 - Depth image and view
+    - A depth attachment is based on an image, just like the color attachment. The difference is that the swap chain will not automatically create depth images for us. We only need a single depth image, because only one draw operation is running at once. 
+    - The depth image needs resources such as image, memory, and image view. The format for the depth image should have reasonable accuracy, such as VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, or VK_FORMAT_D24_UNORM_S8_UINT. Support for a format can be checked using the VkFormatProperties struct and the vkGetPhysicalDeviceFormatProperties function.
 - Explicitly transitioning the depth image
+    - We don't need to explicitly transition the layout of the image to a depth attachment because we'll take care of this in the render pass.
 - Render pass
+    - We now need to modify the render pass to include a depth attachment.
+    - The VkAttachmentDescription is specified for the depth attachment, including its format, sample count, load and store operations (set to VK_ATTACHMENT_STORE_OP_DONT_CARE as the depth data won't be used after drawing), and initial and final layouts. The VkAttachmentReference is created to reference the depth attachment in the subpass. 
+    - The render pass structure is updated to include both the color and depth attachments. The subpass dependencies are extended to ensure proper synchronization and avoid conflicts between the depth image transition and its load operation.
 - Framebuffer
+    - The framebuffer creation process is modified to bind the depth image view to the depth attachment.
+    - We need to update the array of framebuffer attachments to include the swap chain image view as the first attachment and the depth image view as the second attachment.
+    - The VkFramebufferCreateInfo structure is updated to include the render pass, attachment count, attachments array, swap chain extent, and layer count. 
 - Clear values
+    - Because we now have multiple attachments with VK_ATTACHMENT_LOAD_OP_CLEAR, we also need to specify multiple clear values
+    - In the command buffer recording function, an array of VkClearValue structs is created. The first element of the array is used to clear the color attachment to black, while the second element is used to clear the depth attachment to a depth value of 1.0. The clearValueCount and pClearValues fields of VkRenderPassBeginInfo are updated accordingly. 
+    - It's important to ensure that the order of clearValues matches the order of the attachments.
 - Depth and stencil state
+    -  The depth attachment is ready to be used now, but depth testing still needs to be enabled in the graphics pipeline. The depth and stencil state is configured through the VkPipelineDepthStencilStateCreateInfo struct in the graphics pipeline. 
+    - By setting depthTestEnable to VK_TRUE, depth testing is enabled, allowing comparison of the depth values of fragments to determine if they should be discarded. 
+    - With depthWriteEnable set to VK_TRUE, new depth values of passing fragments are written to the depth buffer. The depthCompareOp field specifies the comparison operation used for depth testing, typically set to VK_COMPARE_OP_LESS for closer fragments. 
+    - Optional features like depth bounds testing and stencil operations can also be configured. The depth stencil state is referenced in the VkGraphicsPipelineCreateInfo struct.
 - Handling window resize
+    - Handling window resize involves updating the resolution of the depth buffer to match the new resolution of the color attachment. 
+    - To achieve this, the recreateSwapChain function is extended. It waits for the new framebuffer size, then waits for events and retrieves the updated width and height. 
+    - After waiting for the device to be idle, the existing swap chain is cleaned up, and the swap chain, image views, depth resources, and framebuffers are recreated with the new dimensions. 
 <br></br>
 
 # Loading models
