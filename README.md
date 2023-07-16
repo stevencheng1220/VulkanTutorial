@@ -676,10 +676,22 @@ This table provides a concise summary of the four terms (Descriptor Layout, Desc
 
 # Loading models
 - Introduction
+    - We are extending the program to load the vertices and indices from an actual model file to make the graphics card do some work.
+    - Many graphics API tutorials have the reader write their own OBJ loader in a chapter like this. The problem with this is that any remotely interesting 3D application will soon require features that are not supported by this file format, like skeletal animation. 
+    - We will load mesh data from an OBJ model in this chapter, but we'll focus more on integrating the mesh data with the program itself rather than the details of loading it from a file.
 - Library
+    - We will use the tinyobjloader library to load vertices and faces from an OBJ file.
 - Sample mesh
+    - Implementation details (skip)
 - Loading vertices and indices
+    - In order to load the vertices and indices from the model file, the global arrays for vertices and indices are replaced with non-const containers as class members. The type of indices is changed from uint16_t to uint32_t to accommodate models with a large number of vertices. 
+    - The tinyobjloader library is included to load the model data, and a loadModel function is implemented to populate the vertices and indices containers using the library. The function iterates over the shapes in the model file and extracts the vertex attributes such as position and texture coordinates. 
+    - The resulting geometry is then displayed in the application, with the option to flip the vertical component of the texture coordinates if needed.
 - Vertex deduplication
+    - To optimize memory usage, vertex deduplication is implemented by eliminating duplicated vertex data. 
+    - The unique vertices are stored in a map/container, associating each unique vertex with its corresponding index. 
+    - When reading vertices from the model file, each vertex is checked against the container. If a matching vertex is found, its index is added to the indices array. Otherwise, the vertex is added to the vertices array, assigned a new index, and added to the container.
+    - After implementing deduplication, the size of the vertices array is significantly reduced, resulting in memory savings.
 <br></br>
 
 # Generating Mipmaps
