@@ -696,10 +696,29 @@ This table provides a concise summary of the four terms (Descriptor Layout, Desc
 
 # Generating Mipmaps
 - Introduction
+    - Mipmaps are widely used in games and rendering software.
+    - Mipmaps are precalculated, downscaled versions of an image. Each new image is half the width and height of the previous one.
+    - Mipmaps are used as a form of Level of Detail or LOD. Objects that are far away from the camera will sample their textures from the smaller mip images. Using smaller images increases rendering speed and avoids artifacts such as Moire patterns.
+    - Moiré patterns are complex, often beautiful interference patterns created when two identical (usually transparent) patterns on a flat or curved surface (such as lines, dots, etc.) are overlaid while slightly displaced, rotated, or differently scaled.
 - Image creation
+    - In Vulkan, each of the mip images is stored in different mip levels of a VkImage. Mip level 0 is the original image, and the mip levels after level 0 are commonly referred to as the mip chain.
+    - The number of these mip levels is determined by the image's dimensions and is calculated using a log base 2 operation on the maximum dimension, incremented by one to include the original image. 
+    - Each mip level facilitates different rendering details, with higher levels providing less detail, useful for objects further away in the scene or for more efficient anti-aliasing.
 - Generating Mipmaps
+    - The process of generating mipmaps in Vulkan utilizes the vkCmdBlitImage command. It involves iteratively scaling and filtering data from the initially filled mip level 0, which is done through a staging buffer, to the other undefined levels. 
+    - Vulkan allows each mip level's layout to be independently transitioned for performance optimization, with each level being shifted into optimal layouts using vkCmdPipelineBarrier commands between each blit. 
+    - In practice, the source image transitions to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, and the destination image transitions to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL. 
+    - At the end of this process, each mip level is transitioned to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL after the blit command reading from it is finished. 
+    - To handle non-square images, mip dimensions are divided by two after each iteration, with dimensions kept above zero to ensure validity across all levels.
 - Linear filtering support
+    - While Vulkan's vkCmdBlitImage is useful for generating mip levels, it's not universally supported due to a requirement for linear filtering support. 
+    - To ensure compatibility, one can check the texture image format's support for linear filtering using the vkGetPhysicalDeviceFormatProperties function. However, if the texture image format doesn't support linear filtering, an alternative method would be to find a common texture image format that does, or implement mipmap generation in software using a library like stb_image_resize. 
+    - This latter approach lets you load each mip level into the image similarly to loading the original image. It's worth noting that mipmaps are typically pregenerated and stored with the base level in the texture file to improve loading speeds. Generating mipmaps at runtime is less common.
 - Sampler
+    - In Vulkan, VkSampler controls how mipmap data, held in VkImage, is read during rendering. 
+    - Parameters like minLod, maxLod, mipLodBias, and mipmapMode determine which mip level is selected during texture sampling. Depending on the mipmapMode (VK_SAMPLER_MIPMAP_MODE_NEAREST or VK_SAMPLER_MIPMAP_MODE_LINEAR), the lod value can select a single mip level or two levels for linear blending. 
+    - This lod value also influences whether the magnification filter (magFilter) or minification filter (minFilter) is used in the sample operation, based on the proximity of the object to the camera. mipLodBias can force Vulkan to use lower lod levels than normally used. 
+    - To utilize the full range of mip levels, set minLod to 0.0f, maxLod to the total number of mip levels, and mipLodBias to 0.0f. These configurations determine how the texture appears in rendering.
 <br></br>
 
 # Multisampling
