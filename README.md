@@ -723,11 +723,35 @@ This table provides a concise summary of the four terms (Descriptor Layout, Desc
 
 # Multisampling
 - Introduction
+    - Our program can now load multiple levels of detail for textures which fixes artifacts when rendering objects far away from the viewer. The image is now a lot smoother, however on closer inspection you will notice jagged saw-like patterns along the edges of drawn geometric shapes. 
+    - This undesired effect is called "aliasing" and it's a result of a limited numbers of pixels that are available for rendering. Since there are no displays out there with unlimited resolution, it will be always visible to sOSMome extent. We will alleviate this issue with multisample anti-aliasing.
+    - In ordinary rendering, the pixel color is determined based on a single sample point which in most cases is the center of the target pixel on screen. If part of the drawn line passes through a certain pixel but doesn't cover the sample point, that pixel will be left blank, leading to the jagged "staircase" effect.
+![Alt Text](./README_Media/aliasing.png)
+    - What MSAA does is it uses multiple sample points per pixel (hence the name) to determine its final color. As one might expect, more samples lead to better results, however it is also more computationally expensive.
+![Alt Text](./README_Media/antialiasing.png)
 - Getting available sample count
+    - Determining the maximum number of samples supported by the GPU is crucial for effective multisampling. 
+    - GPU typically support at least 8 samples, but this can vary across hardware.
+    - To keep track of the supported sample count, a new class member is added, with a default value of one sample per pixel (no multisampling).
+    - To find the exact maximum sample count, the code extracts the information from the VkPhysicalDeviceProperties associated with the selected physical device. 
+    - Since both color and depth buffers are in use, the sample count for both must be taken into account. The highest supported sample count that works for both is determined using a bitwise AND operation.
 - Setting up a render target
+    - When implementing multisample anti-aliasing (MSAA), a new render target is required to store multiple samples per pixel. This is because MSAA involves sampling each pixel in an offscreen buffer before rendering it to the screen.
+    - To achieve this, an additional image (buffer) capable of storing the desired number of samples per pixel is created. This new image, referred to as the multisampled color buffer, is used in the rendering process alongside the depth buffer.
+    - The process involves modifying the image creation function to include the number of samples per pixel as a parameter.
+    - The multisampled color buffer and the updated depth buffer resources need to be managed properly by creating and releasing them when necessary. For example, when the window is resized, the color image should be recreated to match the new resolution.
+    - Once the MSAA setup is completed, the next steps involve incorporating the multisampled color buffer into the graphics pipeline, framebuffer, and render pass to achieve improved anti-aliasing results in the final rendered image.
 - Adding new attachments
+    - MSAA involves rendering to an offscreen buffer with multiple samples per pixel, which cannot be presented directly. Therefore, a resolve attachment is introduced to convert the multisampled color image into a regular attachment that can be presented on the screen.
+    - The render pass is updated to include the resolve attachment reference, which points to the color buffer as the resolve target. This allows the render pass to define a multisample resolve operation to display the final image on the screen.
+    - Additionally, the graphics pipeline is modified to specify the number of samples to be used in rasterization, enabling the use of MSAA during rendering.
 - Quality improvements
+    - There are certain limitations of our current MSAA implementation which may impact the quality of the output image in more detailed scenes. 
+    - For example, we're currently not solving potential problems caused by shader aliasing, i.e. MSAA only smoothens out the edges of geometry but not the interior filling. This may lead to a situation when you get a smooth polygon rendered on screen but the applied texture will still look aliased if it contains high contrasting colors. 
+    - One way to approach this problem is to enable Sample Shading which will improve the image quality even further, though at an additional performance cost.
+![Alt Text](./README_Media/sample_shading.png)
 - Conclusion
+    - Implementation details (skip)
 <br></br>
 
 # Computer Shader
