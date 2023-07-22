@@ -762,7 +762,7 @@ This table provides a concise summary of the four terms (Descriptor Layout, Desc
     - GPGPU means that you can do general computations on your GPU, something that has traditionally been a domain of CPUs. But with GPUs having become more and more powerful and more flexible, many workloads that would require the general purpose capabilities of a CPU can now be done on the GPU in realtime.
     - Few examples of where compute capabilities of a GPU can be used are image manipulation, visibility testing, post processing, advanced lighting calculations, animations, physics (e.g. for a particle system) and much more.
     - And it's even possible to use compute for non-visual computational only work that does not require any graphics output, e.g. number crunching or AI related things. This is called "headless compute".
-- Advantage
+- Advantages
     - Doing computationally expensive calculations on the GPU has several advantages.
         - The most obvious one is offloading work from the CPU.
         - Another one is not requiring moving data between the CPU's main memory and the GPU's memory.
