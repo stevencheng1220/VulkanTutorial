@@ -756,8 +756,21 @@ This table provides a concise summary of the four terms (Descriptor Layout, Desc
 
 # Computer Shader
 - Introduction
-- Advantages
+    - Up until now all previous chapters dealt with traditional graphics part of the Vulkan pipeline. But unlike older APIs like OpenGL, compute shader support in Vulkan is mandatory.
+    - This means that you can use compute shaders on every Vulkan implementation available, no matter if it's a high-end desktop GPU or a low-powered embedded device.
+    - This opens up the world of general purpose computing on graphics processor units (GPGPU), no matter where your application is running.
+    - GPGPU means that you can do general computations on your GPU, something that has traditionally been a domain of CPUs. But with GPUs having become more and more powerful and more flexible, many workloads that would require the general purpose capabilities of a CPU can now be done on the GPU in realtime.
+    - Few examples of where compute capabilities of a GPU can be used are image manipulation, visibility testing, post processing, advanced lighting calculations, animations, physics (e.g. for a particle system) and much more.
+    - And it's even possible to use compute for non-visual computational only work that does not require any graphics output, e.g. number crunching or AI related things. This is called "headless compute".
+- Advantage
+    - Doing computationally expensive calculations on the GPU has several advantages.
+        - The most obvious one is offloading work from the CPU.
+        - Another one is not requiring moving data between the CPU's main memory and the GPU's memory.
+        - All of the data can stay on the GPU without having to wait for slow transfers from main memory.
+    - Aside from these, GPUs are heavily parallelized with some of them having tens of thousands of small compute units. This often makes them a better fit for highly parallel workflows than a CPU with a few large compute units.
 - The Vulkan pipeline
+    - Compute is completely separated from the graphics part of the pipeline.
+![Alt Text](./README_Media/vulkan_pipeline_block_diagram.png)
 - An example
 - Data manipulation
 - Shader storage buffer objects (SSBO)
