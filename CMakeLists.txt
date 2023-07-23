@@ -29,4 +29,5 @@ set(VK_ICD_FILENAMES /usr/local/VulkanSDK/macOS/share/vulkan/icd.d/MoltenVK_icd.
 set(VK_LAYER_PATH /usr/local/VulkanSDK/macOS/share/vulkan/explicit_layer.d)
 
 # Executable files
-add_executable(VulkanTutorial main.cpp)
+# add_executable(VulkanTutorial main.cpp)
+add_executable(VulkanTutorial compute.cpp)
