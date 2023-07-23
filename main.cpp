@@ -1027,7 +1027,15 @@ private:
     }
 
     /**
-     * TODO: Fix up docstring once complete
+     * This method sets up the entire graphics pipeline for a basic rendering operation. It prepares vertex and fragment shaders,
+     * defines the format of the vertex data input, configures the rasterizer, defines viewport and scissor rectangles, and sets up
+     * depth and stencil testing along with color blending options and multisampling.
+     *
+     * The primary reason for defining the graphics pipeline this way is to allow the driver to compile the necessary shaders and
+     * configuration into an optimized representation, enabling high-performance rendering. This is an upfront cost that can be
+     * amortized over the life of the application or until the pipeline configuration changes. This is in contrast to older APIs where
+     * state was changed incrementally, leading to potential performance issues due to the driver needing to re-validate and re-optimize
+     * the pipeline state on the fly.
      */
     void createGraphicsPipeline()
     {
