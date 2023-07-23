@@ -754,7 +754,7 @@ This table provides a concise summary of the four terms (Descriptor Layout, Desc
     - Implementation details (skip)
 <br></br>
 
-# Computer Shader
+# Compute Shader
 - Introduction
     - Up until now all previous chapters dealt with traditional graphics part of the Vulkan pipeline. But unlike older APIs like OpenGL, compute shader support in Vulkan is mandatory.
     - This means that you can use compute shaders on every Vulkan implementation available, no matter if it's a high-end desktop GPU or a low-powered embedded device.
@@ -771,22 +771,84 @@ This table provides a concise summary of the four terms (Descriptor Layout, Desc
 - The Vulkan pipeline
     - Compute is completely separated from the graphics part of the pipeline.
 ![Alt Text](./README_Media/vulkan_pipeline_block_diagram.png)
+    - We see the traditional graphics part of the pipeline on the left, and several stages on the right that are not part of this graphics pipeline, including thec compute shader (stage).
+    - With the compute shader stage being detached from the graphics pipeline we'll be able to use it anywhere we see fit. This is very different from e.g. the fragment shader which is always applied to the transformed output of the vertex shader.
+    - The center of the diagram also shows that e.g. descriptor sets are also used by compute, so everything we learned about descriptor layouts, descriptor sets and descriptors also applies here.
 - An example
+    - We will implement a GPU based particle system. Rendering such a system requires 2 main components: vertices, passed as vertex buffers, and a way to update them based on some equation.
+    - The classical CPU based particle system would store particle data in the system's main memory and then use the CPU to update them.
+        - After the update, the vertices need to be transferred to the GPU's memory again so it can display the updated particles in the next frame.
+        - The most straight-forward way would be recreating the vertex buffer with the new data for each frame. This is obviously very costly. 
+        - Depending on your implementation, there are other options like mapping GPU memory so it can be written by the CPU (called "resizable BAR" on desktop systems, or unified memory on integrated GPUs) or just using a host local buffer (which would be the slowest method due to PCI-E bandwidth). But no matter what buffer update method you choose, you always require a "round-trip" to the CPU to update the particles. 
+    - With a GPU based particle system, this round-trip is no longer required.
+        - Vertices are only uploaded to the GPU at the start and all updates are done in the GPU's memory using compute shaders. 
+        - One of the main reasons why this is faster is the much higher bandwidth between the GPU and it's local memory. In a CPU based scenario, you'd be limited by main memory and PCI-express bandwidth, which is often just a fraction of the GPU's memory bandwidth.
+    - When doing this on a GPU with a dedicated compute queue, you can update particles in parallel to the rendering part of the graphics pipeline. This is called "async compute", and is an advanced topic not covered in this tutorial.
 - Data manipulation
-- Shader storage buffer objects (SSBO)
-- Storage images
+    - Up until now, we always wrote data using the CPU and only did reads on the GPU.
+    - An important concept introduced with compute shaders is the ability to arbitrarily read from and write to buffers. For this, Vulkan offers two dedicated storage types.
+    - Shader storage buffer objects (SSBO)
+        - Vulkan utilizes Shader Storage Buffer Objects (SSBOs) to enable shaders to read from and write to a buffer, a functionality resembling uniform buffer objects, but with greater flexibility in aliasing and scalability. 
+        - This is essential when dealing with, for example, a GPU-based particle system where vertices need to be updated by a compute shader and read by a vertex shader. 
+        - Vulkan's ability to specify multiple usages for buffers eliminates the need for different buffer types. The particle vertex buffer can be used as a vertex buffer in the graphics pass and as a storage buffer in the compute pass. 
+        - The struct Particle example demonstrates that the Shader Storage Buffer Object (SSBO) contains an unbounded number of particles, providing a benefit over uniform buffers. The memory layout qualifier, std140, aligns the member elements of the shader storage buffer in memory, facilitating a secure mapping between the host and the GPU.
+    - Storage images
+        - Vulkan provides a functionality called 'Storage Images' that facilitates both reading from and writing to an image within a compute shader. This feature is particularly useful for applying image effects to textures, post-processing, and mip-map generation. 
+        - To create a storage image, you need to set the usage flags of VkImageCreateInfo structure to VK_IMAGE_USAGE_SAMPLED_BIT and VK_IMAGE_USAGE_STORAGE_BIT. These flags signal that the image will be sampled in the fragment shader and used as a storage image in the compute shader.
+        - In GLSL shader, storage images are declared similarly to sampled images, but they include additional attributes like format (rgba8), and qualifiers like readonly or writeonly, indicating the image’s intended usage. The type to declare a storage image is image2D.
+        - To read from and write to these storage images, Vulkan uses commands 'imageLoad' and 'imageStore' respectively, within the compute shader.
 - Compute queue families
+    - Compute uses the queue family properties flag bit VK_QUEUE_COMPUTE_BIT. So if we want to do compute work, we need to get a queue from a queue family that supports compute.
+    - Note that Vulkan requires an implementation which supports graphics operations to have at least one queue family that supports both graphics and compute operations, but it's also possible that implementations offer a dedicated compute queue. 
+    - This dedicated compute queue (that does not have the graphics bit) hints at an asynchronous compute queue. 
 - The compute shader stage
+    - Compute shaders are accessed in a similar way by using the VK_SHADER_STAGE_COMPUTE_BIT pipeline.
 - Loading compute shaders
+    - Implementation details (skip)
 - Preparing the shader storage buffers
+    - In the given example, an array of particles is transferred to the GPU for manipulation. To keep both the CPU and GPU busy, resources are duplicated for each frame in flight. This necessitates the creation of a buffer object and corresponding device memory for each frame.
+    - The particle data is initially held in a 'staging buffer' in the host's memory, from which it is copied into the per-frame shader storage buffers on the GPU.
 - Descriptors
+    - Setting up descriptors for compute is almost identical to graphics. The only difference is that descriptors need to have the VK_SHADER_STAGE_COMPUTE_BIT set to make them accessible by the compute stage.
+    - In the context of rendering a particle system, two layout bindings for shader storage buffer objects are necessary even if rendering only a single system. This is due to particle positions being updated frame-by-frame based on a time delta, thus each frame requires knowledge about the positions from the previous frame for accurate updating.
+    - Therefore, the compute shader needs access to shader storage buffer objects (SSBOs) of both the current and the last frame. This access is provided by passing these to the compute shader through the descriptor setup.
+    - Additionally, the descriptor types for the SSBOs must be requested from the descriptor pool, where the number of VK_DESCRIPTOR_TYPE_STORAGE_BUFFER types requested should be doubled to accommodate for the sets referencing SSBOs of both the current and last frame.
+![Alt Text](./README_Media/compute_ssbo_read_write.svg)
 - Compute pipelines
+    - Compute operations in Vulkan are not a part of the graphics pipeline and thus necessitate the creation of a dedicated compute pipeline using the vkCreateComputePipelines function. 
+    - The purpose of this compute pipeline is to execute the compute commands. Since compute operations do not interact with the rasterization state, their pipeline configuration is simpler, requiring only a single shader stage and a pipeline layout. 
+    - The pipeline layout functions similarly to that in a graphics pipeline, specifying the arrangement and types of resources that can be accessed by the pipeline.
 - Compute space
+    - Within compute shader/workloads, there are two important concepts:
+        - Work groups
+        - Invocations
+    - They define an abstract execution model for how compute workloads are processed by the compute hardware of the GPU in three dimensions (x, y, and z).
+    - Work groups define how the compute workloads are formed and processed by the computer hardware of the GPU. You can think of them as work items the Gpu has to work through. Work group dimensions are set by the application at command buffer time using a dispatch command.
+    - Each work group then is a collection of invocations that execute the same compute shader. Invocations can potentially run in parallel and their dimensions are set in the compute shader. Invocations within a single workgroup have access to shared memory.
+![Alt Text](./README_Media/compute_space.svg)
+    - The number of dimensions for work groups and invocaions depends on how input data is structured. If you work on a 1-D array, you only have to specify the x dimension for both.
 - Compute shaders
+    - Compute shaders in Vulkan utilize the same syntax and many of the same concepts as other shader types like vertex and fragment shaders.
+    - However, a key difference is the use of compute space, expressed in the declaration layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;. This specifies the number of invocations of this compute shader in the current work group, which reflects the dimensions of the data being processed - in this case, a linear 1D array of particles.
+    - The compute shader's main function reads data from the Shader Storage Buffer Object (SSBO) of the previous frame and writes updated particle positions to the SSBO for the current frame. The SSBOs for the input and output frames are declared as binding 1 and binding 2 respectively.
+    - In the context of the shader, each invocation is uniquely identified using the built-in variable gl_GlobalInvocationID. This allows the compute shader to index into the array of particles and apply transformations individually.
 - Running compute commands
-- Dispatch
-- Submitting work
+    - Dispatch
+        - Vulkan's vkCmdDispatch function triggers the execution of the compute pipeline, akin to how vkCmdDraw instigates graphics processing. 
+        - The method for dividing work, in this case, aligns with the one-dimensional nature of the particles array≥… and the structure defined in the compute shader. 
+        - Here, work is distributed into groups, each handling 256 compute shader invocations. The division of work is a strategic balance that might need adjustment based on the nature of the workload and hardware specifications. 
+        - As opposed to graphics command buffers, compute command buffers hold fewer states, and there is no requirement for initiating a render pass or setting a viewport, simplifying the computation process.
+    - Submitting work
+        - As our sample does both compute and graphics operations, we'll be doing two submits to both the graphics and compute queue per frame.
+        - The first submit to the compute queue updates the particle positions using the compute shader, and the second submit will then use that updated data to draw the particle system.
 - Synchronizing graphics and compute
+    - Synchronization is vital, particularly when running compute and graphics operations concurrently, to prevent read-after-write or write-after-read hazards.
+    - In this context, it is necessary to guarantee that the vertex stage doesn't read particles before the compute shader finishes updating them.
+    - Even though compute and graphics operations are submitted one after another, their execution order on the GPU isn't guaranteed. 
+    - Semaphores and fences are used for synchronization, enforcing the execution order and preventing the premature start of vertex fetching before the compute shader completes its tasks. 
+    - The setup lets the compute shader run immediately as no wait semaphores are specified. However, graphics submission must wait for the compute work to finish, ensuring that vertex fetching doesn't start while the compute buffer is still updating particles, and fragment shading doesn't output to color attachments until image presentation.
 - Drawing the particle system
+    - Implementation details (skip)
 - Conclusion
+    - Implementation details (skip)
 <br></br>
