@@ -1,3 +1,11 @@
 build/
 cmake-build-debug/
 .DS_Store
+
+# Working plans, generated relay output and local documentation categories
+/plans/
+/.relay/
+/docs/technical_docs/
+/docs/research_docs/
+/docs/backlog_docs/
+/docs/plans/
